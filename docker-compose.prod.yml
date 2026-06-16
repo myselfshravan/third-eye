@@ -1,0 +1,69 @@
+# Production stack for a single VPS, exposed via Cloudflare Tunnel (no inbound
+# ports, TLS handled by Cloudflare). Bring up with:
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Scale capture throughput by adding worker replicas:
+#   docker compose -f docker-compose.prod.yml up -d --scale worker=3
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Persist the queue across restarts; cap memory so it can't starve browsers.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'noeviction']
+    volumes: ['redis-data:/data']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [internal]
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ROLE: api
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    # Bind to loopback only — Cloudflare Tunnel reaches it over the compose
+    # network, so nothing is exposed publicly on the host.
+    ports: ['127.0.0.1:8080:8080']
+    depends_on:
+      redis:
+        condition: service_healthy
+    shm_size: '1gb' # Chrome crashes with Docker's default 64MB /dev/shm.
+    networks: [internal]
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/entrypoints/worker.js']
+    env_file: .env
+    environment:
+      ROLE: worker
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    shm_size: '1gb'
+    networks: [internal]
+
+  # Cloudflare Tunnel — publishes the API at your chosen hostname with TLS,
+  # no open inbound ports. Create a tunnel in the Cloudflare Zero Trust
+  # dashboard, route the public hostname to service http://api:8080, and put
+  # the tunnel token in .env as TUNNEL_TOKEN.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ['tunnel', '--no-autoupdate', 'run', '--token', '${TUNNEL_TOKEN}']
+    depends_on: [api]
+    networks: [internal]
+
+volumes:
+  redis-data:
+
+networks:
+  internal:
+    driver: bridge
