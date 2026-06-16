@@ -13,3 +13,7 @@ tmp/
 playwright-report/
 test-results/
 captures/
+# Private deployment handoff — contains live secrets, never commit (hosted = private)
+HANDOFF.local.md
+*.local.md
+*.secrets
