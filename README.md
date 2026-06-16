@@ -1,6 +1,14 @@
-# third-eye
+# 👁️ third-eye
 
-A production-grade screenshot & render API. **URL in → image / PDF / JSON out.**
+> A production-grade screenshot & render API. **URL in → image / PDF / JSON out.**
+
+[![CI](https://github.com/myselfshravan/third-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/myselfshravan/third-eye/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-43853d.svg)](.nvmrc)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](tsconfig.json)
+[![Playwright](https://img.shields.io/badge/Playwright-Chromium-2EAD33.svg)](https://playwright.dev)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 Reliably captures *any* website — static, SSR (Next.js), SPAs, and the hard case:
 canvas apps with no DOM (**Flutter/CanvasKit, WebGL, Unity-WASM**).
 
@@ -13,7 +21,10 @@ canvas apps with no DOM (**Flutter/CanvasKit, WebGL, Unity-WASM**).
 - ⚡ **Sync + async (webhooks) + bulk** (up to 100 URLs), Redis/BullMQ queue.
 - 🔑 API-key auth, per-plan Redis-backed rate limits, Prometheus metrics, health
   checks, graceful shutdown.
-- ☁️ One Docker image → **Fly.io** or any VPS. Storage on **Cloudflare R2**.
+- 🧩 **Pluggable** storage (`none`/`s3`/`local`), devices, readiness steps, output
+  formats — see [EXTENDING.md](EXTENDING.md).
+- ☁️ One Docker image → any VPS, published via **Cloudflare Tunnel**. Storage on
+  **Cloudflare R2**.
 
 ## Quick start (local)
 
@@ -95,15 +106,50 @@ The interesting engineering and the hard cases (Flutter/CanvasKit, when-is-a-pag
 ready, full-page stitching, memory) are documented in [CLAUDE.md](CLAUDE.md).
 
 ## Deploy
-- **Fly.io:** `fly deploy` (the `fly.toml` defines `app` + `worker` process
-  groups). `fly scale count app=2 worker=4`. Set secrets:
-  `fly secrets set REDIS_URL=... API_KEYS=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=...`
-- **Any VPS (Hetzner/DO):** `docker compose up -d --build`.
-- **Storage:** Cloudflare R2 (zero egress) — set `STORAGE_ENABLED=true` and the
-  `S3_*` vars; point `S3_PUBLIC_BASE_URL` at your R2/CDN domain.
+
+One Docker image, two roles (`api` + `worker`). Deploys to any Linux box with
+Docker. Recommended: **VPS + Cloudflare Tunnel** (TLS + public hostname, zero
+inbound ports). Full runbook in **[DEPLOY.md](DEPLOY.md)**.
+
+```bash
+git clone https://github.com/myselfshravan/third-eye.git && cd third-eye
+cp .env.production.example .env   # set API_KEYS, TUNNEL_TOKEN, pool sizes
+docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+docker compose -f docker-compose.prod.yml up -d --scale worker=3   # scale out
+```
+
+- **Storage:** Cloudflare R2 (zero egress) — set `STORAGE_DRIVER=s3` and the
+  `S3_*` vars; point `S3_PUBLIC_BASE_URL` at your R2/CDN domain. `local` and
+  `none` drivers are also built in (see [EXTENDING.md](EXTENDING.md)).
 
 > Not built for serverless (Vercel/Lambda): cold starts kill the warm-pool
 > advantage and there's no GL stack, so Flutter/WebGL pages render blank.
 
+## Testing many URLs at once
+Drop URLs into [`examples/test-urls.json`](examples/test-urls.json) and run the
+batch runner — captures each straight through the engine and prints a summary:
+
+```bash
+npm run batch                       # uses examples/test-urls.json
+npm run batch -- path/to/urls.json  # custom file
+```
+
+## Project status
+Pre-1.0 and under active development. The capture engine, API, worker, and
+deploy path are working; see the [CHANGELOG](CHANGELOG.md) and
+[open issues](https://github.com/myselfshravan/third-eye/issues).
+
+## Contributing
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and
+guidelines, [EXTENDING.md](EXTENDING.md) for how to add storage backends,
+devices, readiness steps, or output formats, and [CLAUDE.md](CLAUDE.md) for the
+architecture. By participating you agree to our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+Found a vulnerability? Please report it privately — see
+[SECURITY.md](SECURITY.md). Note the **SSRF** hardening guidance there before
+exposing third-eye publicly (it renders arbitrary user-supplied URLs).
+
 ## License
-MIT
+[MIT](LICENSE) © Shravan Revanna

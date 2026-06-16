@@ -1,82 +1,41 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
+import type { StorageProvider, StoredObject } from './provider.js';
+import { NoneStorageProvider } from './providers/none.js';
+import { S3StorageProvider } from './providers/s3.js';
+import { LocalStorageProvider } from './providers/local.js';
+
+export type { StorageProvider, StoredObject } from './provider.js';
 
 /**
- * Object storage on Cloudflare R2 (or any S3-compatible store). R2 is the cheap
- * choice here: zero egress fees, so serving captures via its public domain /
- * CDN costs nothing per download.
+ * Storage registry. To add a backend: implement `StorageProvider` and add a
+ * line here keyed by its `STORAGE_DRIVER` value — no call site changes needed.
  */
-
-let client: S3Client | null = null;
-
-function s3(): S3Client {
-  if (!client) {
-    client = new S3Client({
-      endpoint: config.storage.endpoint,
-      region: config.storage.region,
-      // R2 / MinIO want path-style addressing with a custom endpoint.
-      forcePathStyle: true,
-      credentials: {
-        accessKeyId: config.storage.accessKeyId,
-        secretAccessKey: config.storage.secretAccessKey,
-      },
-    });
-  }
-  return client;
-}
-
-export interface StoredObject {
-  key: string;
-  url: string;
-  bytes: number;
-}
-
-const EXT: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'application/pdf': 'pdf',
+const BUILDERS: Record<string, () => StorageProvider> = {
+  none: () => new NoneStorageProvider(),
+  s3: () => new S3StorageProvider(config.storage.s3),
+  local: () => new LocalStorageProvider(config.storage.local),
 };
 
-export function isStorageEnabled(): boolean {
-  return config.storage.enabled;
+let provider: StorageProvider | null = null;
+export function getStorage(): StorageProvider {
+  if (!provider) {
+    const build = BUILDERS[config.storage.driver] ?? BUILDERS.none!;
+    provider = build();
+    logger.info({ driver: provider.name, enabled: provider.enabled }, 'storage initialised');
+  }
+  return provider;
 }
 
-/** Upload a capture and return a fetchable URL (public CDN or presigned). */
-export async function putObject(
+export function isStorageEnabled(): boolean {
+  return getStorage().enabled;
+}
+
+/** Facade kept for call-site stability. */
+export function putObject(
   buffer: Buffer,
   contentType: string,
   keyHint: string,
 ): Promise<StoredObject> {
-  if (!config.storage.enabled) {
-    throw new Error('Storage is disabled (STORAGE_ENABLED=false)');
-  }
-  const ext = EXT[contentType] ?? 'bin';
-  const key = `captures/${keyHint}.${ext}`;
-
-  await s3().send(
-    new PutObjectCommand({
-      Bucket: config.storage.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-      CacheControl: 'public, max-age=31536000, immutable',
-    }),
-  );
-
-  let url: string;
-  if (config.storage.publicBaseUrl) {
-    url = `${config.storage.publicBaseUrl.replace(/\/$/, '')}/${key}`;
-  } else {
-    url = await getSignedUrl(
-      s3(),
-      new GetObjectCommand({ Bucket: config.storage.bucket, Key: key }),
-      { expiresIn: config.storage.presignTtlSeconds },
-    );
-  }
-
-  logger.debug({ key, bytes: buffer.length }, 'uploaded capture');
-  return { key, url, bytes: buffer.length };
+  return getStorage().put(buffer, contentType, keyHint);
 }

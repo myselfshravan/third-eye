@@ -1,0 +1,13 @@
+{
+  "$comment": "Drop your test URLs in the `urls` array. Each entry is either a plain URL string or an object { url, label?, options? } where options matches the capture schema (fullPage, device, format, waitStrategy, etc). Run: npm run batch",
+  "defaults": {
+    "fullPage": true,
+    "format": "png",
+    "waitStrategy": "auto"
+  },
+  "urls": [
+    "https://example.com",
+    { "url": "https://bluorng.com/products/flyway-linen-shirt", "label": "bluorng-shopify" },
+    { "url": "https://newme.asia/product/blue-striped-crop-shirt", "label": "newme", "options": { "device": "iphone-15" } }
+  ]
+}

@@ -76,14 +76,24 @@ docker compose up --build       # full local stack (api + worker + redis)
   `WORKER_CONCURRENCY` must fit host RAM; `shm_size: 1gb` in Docker is required
   (default 64MB `/dev/shm` crashes Chrome).
 - Keep `WORKER_CONCURRENCY ≤ BROWSER_POOL_SIZE`.
-- Async results go to R2 (`STORAGE_ENABLED=true`); with storage off, results
+- Async results go to R2 (`STORAGE_DRIVER=s3`); with driver=none, results
   inline as base64 in Redis — fine for dev, not for production volume.
 - Bot protection (Cloudflare/DataDome) can still block captures → `upstream_blocked`.
   We set a realistic UA and block `navigator.webdriver`-style tells, but this is
   an arms race, not a solved problem.
 
 ## Deploy
-Docker image deploys anywhere. `fly.toml` defines `app` + `worker` process groups
-(`fly deploy`; `fly scale count app=2 worker=4`). Equally runnable on a Hetzner/DO
-VPS via `docker compose`. Redis via Upstash/managed; storage via Cloudflare R2.
-**Not** serverless (Vercel/Lambda) — cold starts and no GL stack break canvas apps.
+One Docker image, two roles (`ROLE=api` / `ROLE=worker`). Production target is a
+Linux VPS via `docker-compose.prod.yml`, exposed through a **Cloudflare Tunnel**
+(`cloudflared` service — TLS + public hostname, no inbound ports). Scale with
+`--scale worker=N`. Redis runs in-compose (or point `REDIS_URL` at a managed one);
+storage via the pluggable provider (`STORAGE_DRIVER=s3|local|none`). Full runbook
+in [DEPLOY.md](DEPLOY.md). **Not** serverless (Vercel/Lambda) — cold starts and no
+GL stack break canvas apps.
+
+## Extension points
+See [EXTENDING.md](EXTENDING.md). The seams: storage providers
+(`src/storage/providers/`, registered by `STORAGE_DRIVER`), device profiles
+(`src/capture/devices.ts` + `DEVICE_NAMES`), readiness steps
+(`src/capture/readiness.ts`), output encoders (`src/capture/encode.ts`), and
+ad/cookie blocklists (`src/capture/blocklists.ts`).

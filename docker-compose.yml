@@ -22,7 +22,7 @@ services:
       REDIS_URL: redis://redis:6379
       API_KEYS: te_dev_local:unlimited
       BROWSER_POOL_SIZE: '2'
-      STORAGE_ENABLED: 'false'
+      STORAGE_DRIVER: none
     ports: ['8080:8080']
     depends_on:
       redis:
@@ -40,7 +40,7 @@ services:
       REDIS_URL: redis://redis:6379
       WORKER_CONCURRENCY: '2'
       BROWSER_POOL_SIZE: '2'
-      STORAGE_ENABLED: 'false'
+      STORAGE_DRIVER: none
     depends_on:
       redis:
         condition: service_healthy

@@ -1,12 +1,12 @@
 import type { BrowserContext, Page, Route } from 'playwright';
-import sharp from 'sharp';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { Errors } from '../core/errors.js';
-import type { CaptureOptions, CaptureResult, ImageFormat } from '../core/schema.js';
+import type { CaptureOptions, CaptureResult } from '../core/schema.js';
 import { getBrowserPool } from './browserPool.js';
 import { DEVICES } from './devices.js';
 import { AD_TRACKER_HOSTS, COOKIE_BANNER_SELECTORS } from './blocklists.js';
+import { contentTypeFor, encodeImage } from './encode.js';
 import {
   autoScroll,
   detectCanvasApp,
@@ -35,19 +35,6 @@ function resolveSurface(opts: CaptureOptions) {
     hasTouch: opts.hasTouch ?? false,
     userAgent: opts.userAgent,
   };
-}
-
-function contentType(format: ImageFormat | 'pdf'): string {
-  switch (format) {
-    case 'png':
-      return 'image/png';
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'webp':
-      return 'image/webp';
-    case 'pdf':
-      return 'application/pdf';
-  }
 }
 
 /** Block ad/tracker/analytics requests — faster, cleaner, cheaper captures. */
@@ -96,7 +83,6 @@ async function applyPageManipulation(page: Page, opts: CaptureOptions): Promise<
   }
   if (opts.injectJs) {
     await page.evaluate((js) => {
-      // eslint-disable-next-line no-new-func
       new Function(js)();
     }, opts.injectJs).catch(() => {});
   }
@@ -115,25 +101,6 @@ function navWaitUntil(opts: CaptureOptions): 'load' | 'domcontentloaded' | 'netw
     default:
       return 'load';
   }
-}
-
-async function encode(
-  buffer: Buffer,
-  format: ImageFormat | 'pdf',
-  quality?: number,
-): Promise<{ out: Buffer; width: number; height: number }> {
-  if (format === 'pdf') return { out: buffer, width: 0, height: 0 };
-  // Playwright emits png/jpeg natively; webp goes through sharp. We also read
-  // back true dimensions from the encoded image rather than trusting viewport.
-  if (format === 'webp') {
-    const out = await sharp(buffer)
-      .webp({ quality: quality ?? 80 })
-      .toBuffer();
-    const meta = await sharp(out).metadata();
-    return { out, width: meta.width ?? 0, height: meta.height ?? 0 };
-  }
-  const meta = await sharp(buffer).metadata().catch(() => ({ width: 0, height: 0 }));
-  return { out: buffer, width: meta.width ?? 0, height: meta.height ?? 0 };
 }
 
 /**
@@ -224,7 +191,7 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
         const buffer = await page.pdf({ printBackground: true, preferCSSPageSize: true });
         return {
           buffer,
-          contentType: contentType('pdf'),
+          contentType: contentTypeFor('pdf'),
           meta: {
             url: opts.url,
             finalUrl,
@@ -260,11 +227,11 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
         raw = await page.screenshot({ ...shotOpts, fullPage: opts.fullPage });
       }
 
-      const { out, width, height } = await encode(raw, opts.format, opts.quality);
+      const { out, width, height } = await encodeImage(raw, opts.format, opts.quality);
 
       return {
         buffer: out,
-        contentType: contentType(opts.format),
+        contentType: contentTypeFor(opts.format),
         meta: {
           url: opts.url,
           finalUrl,

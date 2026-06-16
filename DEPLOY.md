@@ -79,7 +79,7 @@ docker compose -f docker-compose.prod.yml restart api
   `WORKER_CONCURRENCY ≤ BROWSER_POOL_SIZE`; both the `api` and each `worker`
   container hold their own pool.
 - `shm_size: 1gb` is set in compose — required, or Chrome crashes on big pages.
-- Enable **R2 storage** (`STORAGE_ENABLED=true` + `S3_*`) before driving real
+- Enable **R2 storage** (`STORAGE_DRIVER=s3` + `S3_*`) before driving real
   async/bulk volume, so results don't pile up as base64 in Redis.
 - Bot-protected targets (Cloudflare/Akamai/DataDome) may still return 403; the
   capture reports `httpStatus` in its metadata so you can detect it.

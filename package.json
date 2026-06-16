@@ -4,6 +4,31 @@
   "private": true,
   "type": "module",
   "description": "Third Eye — a production-grade screenshot/render API that can capture any website, including canvas-based apps (Flutter/CanvasKit, WebGL).",
+  "keywords": [
+    "screenshot",
+    "screenshot-api",
+    "playwright",
+    "headless-chrome",
+    "website-screenshot",
+    "pdf",
+    "render",
+    "flutter",
+    "canvaskit",
+    "webgl",
+    "puppeteer-alternative",
+    "fastify",
+    "bullmq"
+  ],
+  "homepage": "https://github.com/myselfshravan/third-eye#readme",
+  "bugs": {
+    "url": "https://github.com/myselfshravan/third-eye/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myselfshravan/third-eye.git"
+  },
+  "author": "Shravan Revanna",
+  "license": "MIT",
   "engines": {
     "node": ">=22"
   },
@@ -18,7 +43,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "browsers:install": "playwright install --with-deps chromium",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "batch": "tsx scripts/batch.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.658.0",

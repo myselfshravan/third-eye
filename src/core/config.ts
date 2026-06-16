@@ -50,7 +50,8 @@ const EnvSchema = z.object({
   JOB_BACKOFF_MS: intish(5_000),
   JOB_TTL_SECONDS: intish(86_400),
 
-  STORAGE_ENABLED: boolish(false),
+  // Pluggable storage backend. 'none' returns binary/base64 only (no uploads).
+  STORAGE_DRIVER: z.enum(['none', 's3', 'local']).default('none'),
   S3_ENDPOINT: z.string().default(''),
   S3_REGION: z.string().default('auto'),
   S3_BUCKET: z.string().default('third-eye'),
@@ -58,6 +59,8 @@ const EnvSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().default(''),
   S3_PUBLIC_BASE_URL: z.string().default(''),
   S3_PRESIGN_TTL_SECONDS: intish(3_600),
+  LOCAL_STORAGE_DIR: z.string().default('captures'),
+  LOCAL_PUBLIC_BASE_URL: z.string().default(''),
 
   MAX_BULK_URLS: intish(100),
   MAX_VIEWPORT_WIDTH: intish(3_840),
@@ -89,7 +92,6 @@ function parseApiKeys(raw: string): ApiKey[] {
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
-  // eslint-disable-next-line no-console
   console.error('Invalid environment configuration:', parsed.error.flatten().fieldErrors);
   process.exit(1);
 }
@@ -137,14 +139,20 @@ export const config = {
   },
 
   storage: {
-    enabled: env.STORAGE_ENABLED,
-    endpoint: env.S3_ENDPOINT,
-    region: env.S3_REGION,
-    bucket: env.S3_BUCKET,
-    accessKeyId: env.S3_ACCESS_KEY_ID,
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-    publicBaseUrl: env.S3_PUBLIC_BASE_URL,
-    presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
+    driver: env.STORAGE_DRIVER,
+    s3: {
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      bucket: env.S3_BUCKET,
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      publicBaseUrl: env.S3_PUBLIC_BASE_URL,
+      presignTtlSeconds: env.S3_PRESIGN_TTL_SECONDS,
+    },
+    local: {
+      dir: env.LOCAL_STORAGE_DIR,
+      publicBaseUrl: env.LOCAL_PUBLIC_BASE_URL,
+    },
   },
 
   limits: {

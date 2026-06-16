@@ -1,0 +1,48 @@
+name: 🐛 Bug report
+description: Report a capture that fails or renders incorrectly
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report! A reproducible example helps enormously.
+  - type: input
+    id: url
+    attributes:
+      label: Target URL
+      description: The URL that failed (or a public one that reproduces it)
+      placeholder: https://example.com/page
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Request body / options
+      description: The capture options you sent (fullPage, device, waitStrategy, …)
+      render: json
+      placeholder: '{ "url": "https://example.com", "fullPage": true }'
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected vs. what happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error / metadata
+      description: Any server logs, the error envelope, or the capture `meta` (httpStatus, isCanvasApp, …)
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. main @ 65ca639
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How are you running it?
+      options:
+        - Local (npm run smoke/batch)
+        - Local (docker compose)
+        - VPS (docker compose prod)
+        - Other
