@@ -58,6 +58,7 @@ jobs:
           cat > cmd.json <<'JSON'
           {"commands":[
             "set -e",
+            "export HOME=/root",
             "cd /opt/third-eye",
             "git config --global --add safe.directory /opt/third-eye",
             "git fetch --quiet origin main && git reset --hard origin/main",
