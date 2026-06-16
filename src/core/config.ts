@@ -57,6 +57,14 @@ const EnvSchema = z.object({
   EXTRACT_MAX_IMAGES: intish(12),
   EXTRACT_DOWNLOAD_IMAGES: boolish(false),
 
+  // OG image fast endpoint (/v1/og).
+  OG_FETCH_TIMEOUT_MS: intish(5_000),
+  OG_MAX_BYTES: intish(131_072), // stop reading HTML after this much (head is early)
+  OG_CACHE_TTL_SECONDS: intish(3_600),
+  OG_NEGATIVE_TTL_SECONDS: intish(300), // cache "no og:image" briefly
+  OG_CACHE_MAX: intish(5_000),
+  OG_BROWSER_FALLBACK: boolish(true),
+
   WORKER_CONCURRENCY: intish(2),
   JOB_ATTEMPTS: intish(3),
   JOB_BACKOFF_MS: intish(5_000),
@@ -149,6 +157,15 @@ export const config = {
   extract: {
     maxImages: env.EXTRACT_MAX_IMAGES,
     downloadImages: env.EXTRACT_DOWNLOAD_IMAGES,
+  },
+
+  og: {
+    fetchTimeoutMs: env.OG_FETCH_TIMEOUT_MS,
+    maxBytes: env.OG_MAX_BYTES,
+    cacheTtlSeconds: env.OG_CACHE_TTL_SECONDS,
+    negativeTtlSeconds: env.OG_NEGATIVE_TTL_SECONDS,
+    cacheMax: env.OG_CACHE_MAX,
+    browserFallback: env.OG_BROWSER_FALLBACK,
   },
 
   worker: {

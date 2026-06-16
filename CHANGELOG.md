@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`GET /v1/og`** — ultra-low-latency `og:image` lookup. No browser on the happy
+  path (streamed HTTP fetch with early-abort once og:image is found), in-memory +
+  CDN caching, and a browser fallback for blocked/no-og sites. ~150–500ms typical
+  vs seconds for a full render; cached repeats ~0ms.
 - **Product extraction** (`/v1/extract`, `/v1/extract/async`,
   `/v1/extract/listing`) — returns product images + structured data (title,
   brand, price, sizes) from a PDP, or every product card from a PLP. Strategy:

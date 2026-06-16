@@ -170,10 +170,20 @@ Extraction strategy (precedence): **JSON-LD `Product` → OpenGraph → Shopify
 Extraction adds `maxImages` and `includeScreenshot`, and inherits the full
 capture surface (device, stealth, waits, `proxy`).
 
+### ⚡ OG image (ultra-low-latency)
+Just the `og:image` URL, no browser on the happy path — a streamed fetch + parse,
+cached. ~150–500ms (vs seconds for a full render); blocked/no-og sites fall back
+to the browser automatically.
+```bash
+curl -s "https://your-host/v1/og?url=https://bluorng.com/products/flyway-linen-shirt" \
+  -H "x-api-key: $KEY"
+# → {"image":"https://bluorng.com/cdn/shop/files/rvet5refd.jpg?v=…"}
+```
+
 ## Endpoints
 `POST /v1/screenshot` · `GET /v1/screenshot` · `POST /v1/screenshot/async` ·
 `POST /v1/extract` · `POST /v1/extract/async` · `POST /v1/extract/listing` ·
-`GET /v1/jobs/:id` · `POST /v1/bulk` · `GET /healthz` · `GET /readyz` · `GET /metrics`
+`GET /v1/og` · `GET /v1/jobs/:id` · `POST /v1/bulk` · `GET /healthz` · `GET /readyz` · `GET /metrics`
 
 ## How it works (deep dive)
 The interesting engineering and the hard cases (Flutter/CanvasKit, when-is-a-page-

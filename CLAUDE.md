@@ -31,7 +31,8 @@ src/
                heuristics, normalize, plp, extract (orchestrator), types
   storage/     pluggable providers (none|s3|local) + registry
   queue/       BullMQ queue + job types (kind: screenshot|extract)
-  api/         server, auth, routes/ (screenshot, extract, jobs, bulk, health)
+  og/          fast og:image lookup (no-browser streamed fetch + cache + fallback)
+  api/         server, auth, routes/ (screenshot, extract, og, jobs, bulk, health)
   worker/      BullMQ worker (branches on job kind → capture/extract → upload → webhook)
   entrypoints/ api.ts, worker.ts (graceful shutdown, pool warm-up)
 scripts/        smoke.ts (one URL) · batch.ts (many; --extract mode)
