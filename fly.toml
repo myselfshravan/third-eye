@@ -1,0 +1,50 @@
+# Fly.io deployment. Two process groups from one image: a public API and a
+# private worker pool. Scale them independently:
+#   fly deploy
+#   fly scale count app=2 worker=4
+#
+# Redis: provision Upstash Redis and set REDIS_URL as a secret:
+#   fly redis create        # or use any managed Redis
+#   fly secrets set REDIS_URL=... API_KEYS=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=...
+app = "third-eye"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "node dist/entrypoints/api.js"
+  worker = "node dist/entrypoints/worker.js"
+
+[env]
+  NODE_ENV = "production"
+  ROLE = "api"
+  PORT = "8080"
+  BROWSER_POOL_SIZE = "3"
+  WORKER_CONCURRENCY = "3"
+  STORAGE_ENABLED = "true"
+  S3_REGION = "auto"
+  S3_BUCKET = "third-eye"
+
+# Public HTTP only for the API process group.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+  [http_service.checks]
+    [[http_service.checks]]
+      grace_period = "40s"
+      interval = "30s"
+      method = "GET"
+      path = "/healthz"
+      timeout = "5s"
+
+# Browser workloads are memory-bound. 2GB is a safe floor per machine; bump for
+# higher BROWSER_POOL_SIZE / WORKER_CONCURRENCY.
+[[vm]]
+  size = "performance-1x"
+  memory = "2gb"
+  processes = ["app", "worker"]

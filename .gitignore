@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.env.*.local
+coverage/
+.DS_Store
+.vscode/
+.idea/
+tmp/
+*.tsbuildinfo
+playwright-report/
+test-results/
+captures/

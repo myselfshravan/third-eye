@@ -1,0 +1,61 @@
+# Local full-stack: API + worker + Redis (+ optional MinIO as an R2 stand-in).
+#   docker compose up --build
+#   docker compose --profile storage up --build   # also start MinIO
+services:
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    environment:
+      ROLE: api
+      NODE_ENV: production
+      LOG_LEVEL: info
+      PORT: '8080'
+      REDIS_URL: redis://redis:6379
+      API_KEYS: te_dev_local:unlimited
+      BROWSER_POOL_SIZE: '2'
+      STORAGE_ENABLED: 'false'
+    ports: ['8080:8080']
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Chromium needs a larger shared-memory segment than Docker's 64MB default.
+    shm_size: '1gb'
+
+  worker:
+    build: .
+    command: ['node', 'dist/entrypoints/worker.js']
+    environment:
+      ROLE: worker
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: '2'
+      BROWSER_POOL_SIZE: '2'
+      STORAGE_ENABLED: 'false'
+    depends_on:
+      redis:
+        condition: service_healthy
+    shm_size: '1gb'
+
+  # Optional S3-compatible store for local async URL testing.
+  minio:
+    image: minio/minio:latest
+    profiles: ['storage']
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['minio-data:/data']
+
+volumes:
+  minio-data:
