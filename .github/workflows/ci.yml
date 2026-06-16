@@ -24,9 +24,9 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Install Chromium (for smoke)
-        run: npx playwright install --with-deps chromium
-      - name: Smoke capture
+      - name: Install browsers (Playwright + Patchright) for smoke
+        run: npx playwright install --with-deps chromium && npx patchright install chromium
+      - name: Smoke capture (stealth engine, default)
         run: npm run smoke -- https://example.com
 
   docker:
