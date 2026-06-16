@@ -1,0 +1,95 @@
+name: Deploy
+
+# Triggers:
+#  - any push to main whose commit message contains "#deploy"
+#  - manual run (Actions tab → Deploy → Run workflow)
+#
+# Deploys to the EC2 instance over AWS SSM (no SSH, no inbound ports): it runs
+# `git pull` + `docker compose up -d --build` on the box and health-checks.
+#
+# Required GitHub repo secrets (Settings → Secrets and variables → Actions):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   — a dedicated deploy IAM user.
+# Minimal IAM policy for that user (least privilege):
+#   {
+#     "Version": "2012-10-17",
+#     "Statement": [
+#       { "Effect": "Allow", "Action": ["ec2:DescribeInstances"], "Resource": "*" },
+#       { "Effect": "Allow",
+#         "Action": ["ssm:SendCommand","ssm:GetCommandInvocation"],
+#         "Resource": "*" }
+#     ]
+#   }
+# (For stronger security, swap the static keys for GitHub OIDC + an IAM role.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  INSTANCE_TAG: third-eye
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Manual runs always deploy; pushes deploy only when the commit says #deploy.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '#deploy')
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          set -euo pipefail
+          IID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_TAG}" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].InstanceId' --output text)
+          if [ -z "$IID" ]; then echo "::error::no running instance tagged ${INSTANCE_TAG}"; exit 1; fi
+          echo "Deploying ${GITHUB_SHA::7} to $IID"
+
+          cat > cmd.json <<'JSON'
+          {"commands":[
+            "set -e",
+            "cd /opt/third-eye",
+            "git config --global --add safe.directory /opt/third-eye",
+            "git fetch --quiet origin main && git reset --hard origin/main",
+            "docker compose -f docker-compose.prod.yml --env-file .env up -d --build redis api worker",
+            "if grep -q '^TUNNEL_TOKEN=' .env && ! grep -q 'TUNNEL_TOKEN=placeholder' .env; then docker compose -f docker-compose.prod.yml --env-file .env up -d cloudflared; fi",
+            "ok=0; for i in $(seq 1 40); do curl -sf localhost:8080/healthz >/dev/null && { ok=1; break; }; sleep 3; done; [ \"$ok\" = 1 ] || { echo UNHEALTHY; docker compose -f docker-compose.prod.yml logs --tail=40 api; exit 1; }",
+            "echo DEPLOYED; docker compose -f docker-compose.prod.yml ps"
+          ]}
+          JSON
+
+          CID=$(aws ssm send-command --instance-ids "$IID" \
+            --document-name AWS-RunShellScript --comment "deploy ${GITHUB_SHA::7}" \
+            --timeout-seconds 3600 --parameters file://cmd.json \
+            --query 'Command.CommandId' --output text)
+          echo "SSM command: $CID"
+
+          status=Pending
+          for i in $(seq 1 180); do
+            status=$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Success) break;;
+              Failed|Cancelled|TimedOut) break;;
+              *) sleep 10;;
+            esac
+          done
+
+          echo "----- remote output -----"
+          aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" \
+            --query 'StandardOutputContent' --output text || true
+          aws ssm get-command-invocation --command-id "$CID" --instance-id "$IID" \
+            --query 'StandardErrorContent' --output text || true
+          echo "-------------------------"
+          echo "status: $status"
+          [ "$status" = "Success" ] || { echo "::error::deploy failed ($status)"; exit 1; }

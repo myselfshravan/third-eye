@@ -29,7 +29,12 @@ export class S3StorageProvider implements StorageProvider {
       region: cfg.region,
       // R2/MinIO (custom endpoint) need path-style; AWS S3 prefers virtual-hosted.
       forcePathStyle: !!cfg.endpoint,
-      credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      // Use static keys when provided; otherwise fall back to the AWS default
+      // credential chain (env / shared config / EC2 instance role / ECS task role).
+      credentials:
+        cfg.accessKeyId && cfg.secretAccessKey
+          ? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey }
+          : undefined,
     });
   }
 

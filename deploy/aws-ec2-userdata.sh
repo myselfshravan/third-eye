@@ -16,12 +16,16 @@ dnf install -y docker git
 systemctl enable --now docker
 usermod -aG docker ec2-user || true
 
-echo "── docker compose plugin ──"
+echo "── docker compose + buildx plugins ──"
 mkdir -p /usr/local/lib/docker/cli-plugins
-ARCH="$(uname -m)"; [ "$ARCH" = "aarch64" ] && CARCH="aarch64" || CARCH="x86_64"
+ARCH="$(uname -m)"; [ "$ARCH" = "aarch64" ] && CARCH="aarch64" BARCH="arm64" || CARCH="x86_64" BARCH="amd64"
 curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${CARCH}" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+# buildx is required by modern `docker compose build` and is NOT bundled with
+# Amazon Linux 2023's docker package.
+curl -fsSL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-${BARCH}" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
 
 echo "── 2GB swap (guards against browser OOM on smaller instances) ──"
 if [ ! -f /swapfile ]; then
