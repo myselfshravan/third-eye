@@ -24,14 +24,17 @@ The same Docker image runs as `api` or `worker`, selected by `ROLE`.
 ```
 src/
   core/        config (env→validated), logger, errors, metrics, schema (the contract)
-  capture/     browserPool, capture (orchestrator), readiness (the oracle),
-               devices, blocklists
-  storage/     R2/S3 upload + presign
-  queue/       BullMQ queue + job types
-  api/         server, auth, routes/ (screenshot, jobs, bulk, health)
-  worker/      BullMQ worker (capture → upload → webhook)
+  capture/     engine (playwright|patchright), browserPool, capture (orchestrator +
+               shared buildContextOptions/preparePage), readiness (the oracle),
+               block (bot-wall detection), devices, blocklists, encode
+  extract/     product extraction: structured (JSON-LD/OG/microdata), shopify,
+               heuristics, normalize, plp, extract (orchestrator), types
+  storage/     pluggable providers (none|s3|local) + registry
+  queue/       BullMQ queue + job types (kind: screenshot|extract)
+  api/         server, auth, routes/ (screenshot, extract, jobs, bulk, health)
+  worker/      BullMQ worker (branches on job kind → capture/extract → upload → webhook)
   entrypoints/ api.ts, worker.ts (graceful shutdown, pool warm-up)
-scripts/smoke.ts  engine-only end-to-end test (no API/Redis)
+scripts/        smoke.ts (one URL) · batch.ts (many; --extract mode)
 ```
 
 ## The two things that matter most
@@ -42,6 +45,24 @@ scripts/smoke.ts  engine-only end-to-end test (no API/Redis)
 2. **The browser pool** (`src/capture/browserPool.ts`) — warm, isolated-per-
    request contexts, recycle-after-N-uses, crash self-heal. Chrome leaks; this is
    what keeps the service alive under load.
+
+## Product extraction (the wedge)
+- `extractProduct()` ([src/extract/extract.ts](src/extract/extract.ts)) reuses the
+  shared `buildContextOptions`/`preparePage` from capture.ts, then runs three
+  extractors and merges by `SOURCE_RANK`: **shopify → jsonld → og → microdata →
+  dom**. `confidence` = high (jsonld/shopify) | medium (og/microdata) | low (dom).
+- The Shopify fast-path fetches `<product-url>.json` *through the page's request
+  context* so it inherits stealth + cookies.
+- Screenshot is the default product; extraction is opt-in (`/v1/extract`,
+  `?response=image` returns the primary image bytes, screenshot fallback).
+
+## Bot detection (the moat)
+- `STEALTH=true` (default) launches via Patchright (patched Chromium) instead of
+  stock Playwright — see [src/capture/engine.ts](src/capture/engine.ts). It strips
+  `navigator.webdriver`, the `Runtime.enable` CDP leak, and headless UA tokens.
+- Not a silver bullet: Akamai sensor-data / PerimeterX / DataDome block at the
+  edge (TLS/IP/behavioral). We detect and flag (`blocked`) rather than fake
+  success; cracking them needs `PROXY_URL` (residential). See README Limitations.
 
 ## Canvas apps (Flutter/CanvasKit/WebGL) — the hard case
 - They paint the whole UI into one `<canvas>` via WebGL; there is **no DOM** to

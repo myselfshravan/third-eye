@@ -86,7 +86,19 @@ page layout.
 Routes use the Zod type provider — validate with a schema derived from
 [`src/core/schema.ts`](src/core/schema.ts) so the contract stays single-sourced.
 
-## 7. Queue backend
+## 7. Product extractor
+**Where:** [`src/extract/`](src/extract/) +
+[`src/extract/extract.ts`](src/extract/extract.ts) (orchestrator)
+
+Each extractor takes the prepared `page` and returns partial product data +
+images tagged with an `ImageSource`. The orchestrator merges by precedence
+(`SOURCE_RANK`). Add one (e.g. a vendor-specific API, or a vision-model image
+ranker) by writing a `src/extract/<name>.ts` that returns `{ images, ...fields }`
+and calling it from `extractProduct()`, then giving its `source` a rank. The
+similar-image-search **embeddings** enrichment is the intended next extractor:
+run it after merge, attach vectors to each `ProductImage`.
+
+## 8. Queue backend
 **Where:** [`src/queue/queue.ts`](src/queue/queue.ts)
 
 The async path is BullMQ-on-Redis. To swap it, keep the `getCaptureQueue()` /

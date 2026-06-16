@@ -7,7 +7,36 @@
   },
   "urls": [
     "https://example.com",
-    { "url": "https://bluorng.com/products/flyway-linen-shirt", "label": "bluorng-shopify" },
-    { "url": "https://newme.asia/product/blue-striped-crop-shirt", "label": "newme", "options": { "device": "iphone-15" } }
+    {
+      "url": "https://bluorng.com/products/flyway-linen-shirt",
+      "label": "bluorng-shopify"
+    },
+    {
+      "url": "https://newme.asia/product/blue-striped-crop-shirt",
+      "label": "newme",
+      "options": {
+        "device": "iphone-15"
+      }
+    },
+    {
+      "url": "https://www2.hm.com/en_in/productpage.1344208001.html",
+      "label": "h-and-m"
+    },
+    {
+      "url": "https://www.savana.com/details/a-line-dress-1863632",
+      "label": "savana"
+    },
+    {
+      "url": "https://www.zara.com/in/en/relaxed-fit-cotton-linen-shirt-p01019861.html",
+      "label": "zara"
+    },
+    {
+      "url": "https://knotnow.co/product/29945",
+      "label": "knotnow"
+    },
+    {
+      "url": "https://www.uniqlo.com/in/en/products/E482443-000/00?colorDisplayCode=38&sizeDisplayCode=005",
+      "label": "uniqlo"
+    }
   ]
 }

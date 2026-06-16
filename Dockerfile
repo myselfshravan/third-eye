@@ -29,6 +29,10 @@ COPY --from=proddeps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
 
+# The Playwright base image bundles Playwright's browsers, but Patchright ships
+# its own patched Chromium — install it into the same cache (OS deps are present).
+RUN npx patchright install chromium
+
 EXPOSE 8080
 # ROLE selects behaviour; default API. Override CMD for the worker.
 ENV ROLE=api

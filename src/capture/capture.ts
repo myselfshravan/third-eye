@@ -14,6 +14,7 @@ import {
   waitForCanvasReady,
   waitForFonts,
 } from './readiness.js';
+import { detectBlock } from './block.js';
 
 /** Resolve the rendering surface (device profile → explicit viewport → default). */
 function resolveSurface(opts: CaptureOptions) {
@@ -103,88 +104,118 @@ function navWaitUntil(opts: CaptureOptions): 'load' | 'domcontentloaded' | 'netw
   }
 }
 
+/** Build the per-request browser context options (surface + locale + proxy). */
+export function buildContextOptions(opts: CaptureOptions) {
+  const surface = resolveSurface(opts);
+  return {
+    viewport: surface.viewport,
+    deviceScaleFactor: surface.deviceScaleFactor,
+    isMobile: surface.isMobile,
+    hasTouch: surface.hasTouch,
+    userAgent: surface.userAgent,
+    locale: opts.locale,
+    timezoneId: opts.timezone,
+    colorScheme: (opts.darkMode ? 'dark' : 'light') as 'dark' | 'light',
+    reducedMotion: (opts.reducedMotion ? 'reduce' : 'no-preference') as 'reduce' | 'no-preference',
+    ignoreHTTPSErrors: true,
+    extraHTTPHeaders: opts.headers,
+    serviceWorkers: 'block' as const,
+    ...(opts.proxy ? { proxy: { server: opts.proxy } } : {}),
+  };
+}
+
+export interface PreparedPage {
+  page: Page;
+  finalUrl: string;
+  httpStatus: number | null;
+  isCanvasApp: boolean;
+  blocked: boolean;
+}
+
 /**
- * The capture orchestrator: surface → context → navigation → readiness oracle →
- * manipulation → pixels. Wrapped in a hard overall timeout so a pathological
- * page can never pin a pooled browser indefinitely.
+ * Navigate → run the readiness oracle → manipulate the page → detect bot-walls.
+ * The shared front half of every operation; `capture()` and the extractor both
+ * build on the page it returns.
+ */
+export async function preparePage(context: BrowserContext, opts: CaptureOptions): Promise<PreparedPage> {
+  context.setDefaultNavigationTimeout(config.browser.navTimeoutMs);
+  context.setDefaultTimeout(config.browser.navTimeoutMs);
+
+  if (opts.blockAds) await installAdBlocker(context);
+  if (opts.cookies?.length) {
+    await context.addCookies(
+      opts.cookies.map((c) => ({
+        name: c.name,
+        value: c.value,
+        url: c.domain ? undefined : opts.url,
+        domain: c.domain,
+        path: c.path ?? '/',
+      })),
+    );
+  }
+
+  const page = await context.newPage();
+
+  let httpStatus: number | null = null;
+  try {
+    const resp = await page.goto(opts.url, { waitUntil: navWaitUntil(opts) });
+    httpStatus = resp?.status() ?? null;
+  } catch (err) {
+    throw Errors.navigationFailed(`Failed to load ${opts.url}`, String(err));
+  }
+
+  if (opts.waitStrategy === 'auto' || opts.waitStrategy === 'networkidle') {
+    await page.waitForLoadState('networkidle').catch(() => {});
+  }
+
+  const isCanvasApp = await detectCanvasApp(page);
+
+  if (opts.waitStrategy === 'auto') {
+    await waitForFonts(page);
+    if (opts.scrollPage && !opts.selector && !opts.clip) await autoScroll(page);
+    if (isCanvasApp) await waitForCanvasReady(page);
+  }
+
+  if (opts.waitForSelector) {
+    await page
+      .waitForSelector(opts.waitForSelector, { state: 'visible' })
+      .catch(() => logger.warn({ sel: opts.waitForSelector }, 'waitForSelector timed out'));
+  }
+  if (opts.waitForFunction) {
+    await page
+      .waitForFunction(opts.waitForFunction)
+      .catch(() => logger.warn('waitForFunction timed out'));
+  }
+
+  await applyPageManipulation(page, opts);
+
+  if (opts.delayMs) await page.waitForTimeout(Math.min(opts.delayMs, 15_000));
+
+  const finalUrl = page.url();
+
+  // Detect a bot-wall / challenge. Non-fatal by default (we still return the
+  // capture, flagged); hard-fail only if the caller opted in.
+  const blocked = await detectBlock(page, httpStatus);
+  if (blocked) {
+    logger.warn({ url: opts.url, httpStatus }, 'bot-wall / challenge detected');
+    if (opts.failOnBlock) throw Errors.upstreamBlocked();
+  }
+
+  return { page, finalUrl, httpStatus, isCanvasApp, blocked };
+}
+
+/**
+ * The capture orchestrator: context → prepare page → pixels. Wrapped in a hard
+ * overall timeout so a pathological page can never pin a pooled browser.
  */
 export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
   const startedAt = Date.now();
-  const surface = resolveSurface(opts);
   const pool = getBrowserPool();
 
   const work = pool.withContext(
-    {
-      viewport: surface.viewport,
-      deviceScaleFactor: surface.deviceScaleFactor,
-      isMobile: surface.isMobile,
-      hasTouch: surface.hasTouch,
-      userAgent: surface.userAgent,
-      locale: opts.locale,
-      timezoneId: opts.timezone,
-      colorScheme: opts.darkMode ? 'dark' : 'light',
-      reducedMotion: opts.reducedMotion ? 'reduce' : 'no-preference',
-      ignoreHTTPSErrors: true,
-      extraHTTPHeaders: opts.headers,
-      serviceWorkers: 'block',
-    },
+    buildContextOptions(opts),
     async (context): Promise<CaptureResult> => {
-      context.setDefaultNavigationTimeout(config.browser.navTimeoutMs);
-      context.setDefaultTimeout(config.browser.navTimeoutMs);
-
-      if (opts.blockAds) await installAdBlocker(context);
-      if (opts.cookies?.length) {
-        await context.addCookies(
-          opts.cookies.map((c) => ({
-            name: c.name,
-            value: c.value,
-            url: c.domain ? undefined : opts.url,
-            domain: c.domain,
-            path: c.path ?? '/',
-          })),
-        );
-      }
-
-      const page = await context.newPage();
-
-      // ── Navigate ────────────────────────────────────────────────────────
-      let httpStatus: number | null = null;
-      try {
-        const resp = await page.goto(opts.url, { waitUntil: navWaitUntil(opts) });
-        httpStatus = resp?.status() ?? null;
-      } catch (err) {
-        throw Errors.navigationFailed(`Failed to load ${opts.url}`, String(err));
-      }
-
-      // ── Readiness oracle ──────────────────────────────────────────────────
-      if (opts.waitStrategy === 'auto' || opts.waitStrategy === 'networkidle') {
-        await page.waitForLoadState('networkidle').catch(() => {});
-      }
-
-      const isCanvasApp = await detectCanvasApp(page);
-
-      if (opts.waitStrategy === 'auto') {
-        await waitForFonts(page);
-        if (opts.scrollPage && !opts.selector && !opts.clip) await autoScroll(page);
-        if (isCanvasApp) await waitForCanvasReady(page);
-      }
-
-      if (opts.waitForSelector) {
-        await page
-          .waitForSelector(opts.waitForSelector, { state: 'visible' })
-          .catch(() => logger.warn({ sel: opts.waitForSelector }, 'waitForSelector timed out'));
-      }
-      if (opts.waitForFunction) {
-        await page
-          .waitForFunction(opts.waitForFunction)
-          .catch(() => logger.warn('waitForFunction timed out'));
-      }
-
-      await applyPageManipulation(page, opts);
-
-      if (opts.delayMs) await page.waitForTimeout(Math.min(opts.delayMs, 15_000));
-
-      const finalUrl = page.url();
+      const { page, finalUrl, httpStatus, isCanvasApp, blocked } = await preparePage(context, opts);
 
       // ── PDF path ──────────────────────────────────────────────────────────
       if (opts.pdf) {
@@ -202,6 +233,7 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
             durationMs: Date.now() - startedAt,
             isCanvasApp,
             httpStatus,
+            blocked,
           },
         };
       }
@@ -242,6 +274,7 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
           durationMs: Date.now() - startedAt,
           isCanvasApp,
           httpStatus,
+          blocked,
         },
       };
     },

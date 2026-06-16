@@ -44,6 +44,18 @@ const EnvSchema = z.object({
   NAV_TIMEOUT_MS: intish(20_000),
   BROWSER_HEADLESS: boolish(true),
   BROWSER_ENABLE_WEBGL: boolish(true),
+  // Use Patchright's patched Chromium to defeat headless/automation detection.
+  STEALTH: boolish(true),
+  // Browser channel: '' = bundled Chromium, or 'chrome'/'msedge' to use a
+  // system-installed real browser (a genuine TLS fingerprint helps on some sites).
+  BROWSER_CHANNEL: z.string().default(''),
+  // Optional egress proxy for the hardest (Akamai/DataDome) targets. Empty = none.
+  // e.g. http://user:pass@host:port
+  PROXY_URL: z.string().default(''),
+
+  // Extraction (PDP/PLP product images + structured data).
+  EXTRACT_MAX_IMAGES: intish(12),
+  EXTRACT_DOWNLOAD_IMAGES: boolish(false),
 
   WORKER_CONCURRENCY: intish(2),
   JOB_ATTEMPTS: intish(3),
@@ -129,6 +141,14 @@ export const config = {
     navTimeoutMs: env.NAV_TIMEOUT_MS,
     headless: env.BROWSER_HEADLESS,
     enableWebgl: env.BROWSER_ENABLE_WEBGL,
+    stealth: env.STEALTH,
+    channel: env.BROWSER_CHANNEL,
+    proxyUrl: env.PROXY_URL,
+  },
+
+  extract: {
+    maxImages: env.EXTRACT_MAX_IMAGES,
+    downloadImages: env.EXTRACT_DOWNLOAD_IMAGES,
   },
 
   worker: {

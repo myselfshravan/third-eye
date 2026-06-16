@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { capture } from '../capture/capture.js';
+import { extractProduct } from '../extract/extract.js';
 import { isStorageEnabled, putObject } from '../storage/storage.js';
 import { captureCounter, captureDuration } from '../core/metrics.js';
 import {
@@ -30,11 +31,55 @@ async function postWebhook(url: string, payload: CaptureJobResult): Promise<void
   }
 }
 
+/** Optionally re-host product images in our own storage (vs. the source CDN). */
+async function rehostImages(images: { url: string }[]): Promise<Map<string, string>> {
+  const mapping = new Map<string, string>();
+  if (!config.extract.downloadImages || !isStorageEnabled()) return mapping;
+  await Promise.all(
+    images.map(async (img) => {
+      try {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 15_000);
+        const resp = await fetch(img.url, { signal: ac.signal });
+        clearTimeout(t);
+        if (!resp.ok) return;
+        const buf = Buffer.from(await resp.arrayBuffer());
+        const ct = resp.headers.get('content-type') ?? 'image/jpeg';
+        const stored = await putObject(buf, ct, nanoid());
+        mapping.set(img.url, stored.url);
+      } catch (err) {
+        logger.warn({ err, url: img.url }, 'image re-host failed');
+      }
+    }),
+  );
+  return mapping;
+}
+
 async function process(job: Job<CaptureJobData, CaptureJobResult>): Promise<CaptureJobResult> {
-  const { options, webhookUrl, batchId } = job.data;
-  logger.info({ jobId: job.id, url: options.url, batchId }, 'processing capture');
+  const { kind = 'screenshot', options, webhookUrl, batchId } = job.data;
+  logger.info({ jobId: job.id, url: options.url, kind, batchId }, 'processing job');
 
   try {
+    // ── Extraction jobs ─────────────────────────────────────────────────────
+    if (kind === 'extract') {
+      const product = await extractProduct(options);
+      const remap = await rehostImages(product.images);
+      if (remap.size) {
+        product.images = product.images.map((i) => ({ ...i, url: remap.get(i.url) ?? i.url }));
+        product.primaryImage = product.images[0]?.url;
+      }
+      const payload: CaptureJobResult = {
+        url: product.url,
+        finalUrl: product.finalUrl,
+        status: 'done',
+        product,
+        durationMs: product.durationMs,
+      };
+      if (webhookUrl) await postWebhook(webhookUrl, payload);
+      return payload;
+    }
+
+    // ── Screenshot jobs ───────────────────────────────────────────────────────
     const result = await capture(options);
     captureCounter.inc({ outcome: 'ok', format: result.meta.format, canvas: String(result.meta.isCanvasApp) });
     captureDuration.observe({ format: result.meta.format, outcome: 'ok' }, result.meta.durationMs / 1000);

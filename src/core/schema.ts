@@ -110,6 +110,12 @@ const CaptureOptionsBase = z
     // Block ads/trackers/analytics. Faster + cleaner shots.
     blockAds: z.boolean().default(true),
     blockCookieBanners: z.boolean().default(true),
+    // Per-request egress proxy (overrides PROXY_URL). e.g. http://user:pass@host:port
+    proxy: z.string().optional(),
+    // Throw `upstream_blocked` instead of returning a capture when a bot-wall /
+    // challenge page is detected. Default false: we return whatever loaded and
+    // flag `blocked` in the metadata.
+    failOnBlock: z.boolean().default(false),
     // Extra request headers and cookies for auth'd pages.
     headers: z.record(z.string()).optional(),
     cookies: z
@@ -161,6 +167,30 @@ export const BulkCaptureSchema = z
 
 export type BulkCapture = z.infer<typeof BulkCaptureSchema>;
 
+/**
+ * Extraction reuses the full capture surface (device, stealth, waits, proxy)
+ * and adds extraction-specific knobs. A superset of CaptureOptions, so it can be
+ * handed straight to the shared preparePage()/capture() helpers.
+ */
+const ExtractOptionsBase = CaptureOptionsBase.extend({
+  // Cap the number of product images returned (default from EXTRACT_MAX_IMAGES).
+  maxImages: z.number().int().min(1).max(50).optional(),
+  // Also capture + return a screenshot of the page alongside the product data.
+  includeScreenshot: z.boolean().default(false),
+}).strict();
+
+export const ExtractOptionsSchema = ExtractOptionsBase.superRefine((v, ctx) => {
+  if (v.device && v.viewport) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'device and viewport are mutually exclusive — device implies a viewport',
+      path: ['device'],
+    });
+  }
+});
+
+export type ExtractOptions = z.infer<typeof ExtractOptionsSchema>;
+
 export interface CaptureResult {
   buffer: Buffer;
   contentType: string;
@@ -174,5 +204,6 @@ export interface CaptureResult {
     durationMs: number;
     isCanvasApp: boolean; // detected Flutter/CanvasKit/WebGL surface
     httpStatus: number | null;
+    blocked: boolean; // bot-wall / challenge page detected
   };
 }

@@ -6,6 +6,7 @@
  *   npm run smoke -- https://flutter.dev/showcase  (canvas-app path)
  */
 import { writeFile, mkdir } from 'node:fs/promises';
+import { CaptureOptionsSchema } from '../src/core/schema.js';
 import { capture } from '../src/capture/capture.js';
 import { getBrowserPool } from '../src/capture/browserPool.js';
 
@@ -14,19 +15,7 @@ async function main() {
   const fullPage = process.argv.includes('--full');
   console.log(`Capturing ${url} (fullPage=${fullPage}) …`);
 
-  const result = await capture({
-    url,
-    format: 'png',
-    fullPage,
-    omitBackground: false,
-    reducedMotion: true,
-    waitStrategy: 'auto',
-    delayMs: 0,
-    scrollPage: true,
-    blockAds: true,
-    blockCookieBanners: true,
-    pdf: false,
-  });
+  const result = await capture(CaptureOptionsSchema.parse({ url, format: 'png', fullPage }));
 
   await mkdir('captures', { recursive: true });
   const out = `captures/smoke.${result.meta.format}`;

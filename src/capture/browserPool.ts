@@ -1,7 +1,8 @@
-import { chromium, type Browser, type BrowserContext } from 'playwright';
+import { type Browser, type BrowserContext } from 'playwright';
 import genericPool, { type Pool } from 'generic-pool';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
+import { browserEngine, engineName } from './engine.js';
 
 /**
  * The browser pool is the reliability core of the service. Headless Chrome eats
@@ -38,6 +39,9 @@ function launchArgs(): string[] {
     '--hide-scrollbars',
     '--mute-audio',
     '--font-render-hinting=none', // deterministic text rendering
+    // Hide the most obvious automation tell at the renderer level. Patchright
+    // also strips this and the Runtime.enable CDP leak at the binary level.
+    '--disable-blink-features=AutomationControlled',
   ];
   if (config.browser.enableWebgl) {
     // ANGLE over SwiftShader = software WebGL that works without a real GPU.
@@ -60,14 +64,17 @@ function createPool(): Pool<PooledBrowser> {
   const factory: genericPool.Factory<PooledBrowser> = {
     async create() {
       const id = ++counter;
-      const browser = await chromium.launch({
+      const browser = await browserEngine.launch({
         headless: config.browser.headless,
         args: launchArgs(),
+        ...(config.browser.channel ? { channel: config.browser.channel } : {}),
+        // Egress proxy applies to all contexts from this browser when set.
+        ...(config.browser.proxyUrl ? { proxy: { server: config.browser.proxyUrl } } : {}),
       });
       browser.on('disconnected', () => {
         logger.warn({ browserId: id }, 'browser disconnected');
       });
-      logger.info({ browserId: id }, 'browser launched');
+      logger.info({ browserId: id, engine: engineName }, 'browser launched');
       return { browser, uses: 0, id };
     },
     async destroy(pb) {

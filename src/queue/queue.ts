@@ -2,6 +2,7 @@ import { Queue, QueueEvents, type ConnectionOptions } from 'bullmq';
 import { Redis } from 'ioredis';
 import { config } from '../core/config.js';
 import type { CaptureOptions } from '../core/schema.js';
+import type { ProductData } from '../extract/types.js';
 
 /**
  * Async capture is decoupled via BullMQ on Redis. The API enqueues; one or more
@@ -12,6 +13,8 @@ import type { CaptureOptions } from '../core/schema.js';
 export const CAPTURE_QUEUE = 'captures';
 
 export interface CaptureJobData {
+  // 'screenshot' (default) captures pixels; 'extract' pulls product data/images.
+  kind?: 'screenshot' | 'extract';
   options: CaptureOptions;
   webhookUrl?: string;
   apiKey: string;
@@ -30,6 +33,8 @@ export interface CaptureJobResult {
   bytes?: number;
   durationMs?: number;
   isCanvasApp?: boolean;
+  // Present on 'extract' jobs.
+  product?: ProductData;
   error?: string;
 }
 

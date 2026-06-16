@@ -17,6 +17,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerScreenshotRoutes } from './routes/screenshot.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerBulkRoutes } from './routes/bulk.js';
+import { registerExtractRoutes } from './routes/extract.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -79,6 +80,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(registerScreenshotRoutes);
   await app.register(registerJobRoutes);
   await app.register(registerBulkRoutes);
+  await app.register(registerExtractRoutes);
 
   return app;
 }
