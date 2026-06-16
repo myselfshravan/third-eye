@@ -27,7 +27,8 @@ export class S3StorageProvider implements StorageProvider {
     this.client = new S3Client({
       endpoint: cfg.endpoint || undefined,
       region: cfg.region,
-      forcePathStyle: true, // R2 / MinIO want path-style with a custom endpoint
+      // R2/MinIO (custom endpoint) need path-style; AWS S3 prefers virtual-hosted.
+      forcePathStyle: !!cfg.endpoint,
       credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
     });
   }

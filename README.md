@@ -182,8 +182,9 @@ ready, full-page stitching, memory) are documented in [CLAUDE.md](CLAUDE.md).
 ## Deploy
 
 One Docker image, two roles (`api` + `worker`). Deploys to any Linux box with
-Docker. Recommended: **VPS + Cloudflare Tunnel** (TLS + public hostname, zero
-inbound ports). Full runbook in **[DEPLOY.md](DEPLOY.md)**.
+Docker. Recommended: **VPS / EC2 + Cloudflare Tunnel** (TLS + public hostname,
+zero inbound ports). Runbooks: **[DEPLOY.md](DEPLOY.md)** (any VPS) ·
+**[DEPLOY-AWS.md](DEPLOY-AWS.md)** (EC2 + S3, with a one-paste bootstrap script).
 
 ```bash
 git clone https://github.com/myselfshravan/third-eye.git && cd third-eye
