@@ -42,6 +42,9 @@ const EnvSchema = z.object({
   BROWSER_MAX_USES: intish(80),
   CAPTURE_TIMEOUT_MS: intish(30_000),
   NAV_TIMEOUT_MS: intish(20_000),
+  // In 'auto' mode, wait for networkidle but cap it — chatty sites (analytics,
+  // chat, long-poll) never go idle and would otherwise stall to the timeout.
+  NETWORKIDLE_CAP_MS: intish(3_000),
   BROWSER_HEADLESS: boolish(true),
   BROWSER_ENABLE_WEBGL: boolish(true),
   // Use Patchright's patched Chromium to defeat headless/automation detection.
@@ -147,6 +150,7 @@ export const config = {
     maxUses: env.BROWSER_MAX_USES,
     captureTimeoutMs: env.CAPTURE_TIMEOUT_MS,
     navTimeoutMs: env.NAV_TIMEOUT_MS,
+    networkIdleCapMs: env.NETWORKIDLE_CAP_MS,
     headless: env.BROWSER_HEADLESS,
     enableWebgl: env.BROWSER_ENABLE_WEBGL,
     stealth: env.STEALTH,

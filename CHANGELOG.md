@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Faster `auto` captures on heavy sites** — the readiness oracle now starts at
+  `DOMContentLoaded` (not full `load`) and **caps the `networkidle` wait**
+  (`NETWORKIDLE_CAP_MS`, default 3s) so chatty sites (analytics/chat/long-poll)
+  no longer stall to the navigation timeout. Explicit `waitStrategy: "networkidle"`
+  still waits fully.
+
 ### Added
 - **`GET /v1/og`** — ultra-low-latency `og:image` lookup. No browser on the happy
   path (streamed HTTP fetch with early-abort once og:image is found), in-memory +

@@ -100,7 +100,10 @@ function navWaitUntil(opts: CaptureOptions): 'load' | 'domcontentloaded' | 'netw
       return 'load';
     case 'auto':
     default:
-      return 'load';
+      // Start the readiness oracle at DOMContentLoaded (not full `load`) — we
+      // still do a bounded networkidle + lazy-load scroll afterwards, so this
+      // just avoids blocking on the long tail of resource loads.
+      return 'domcontentloaded';
   }
 }
 
@@ -164,8 +167,16 @@ export async function preparePage(context: BrowserContext, opts: CaptureOptions)
     throw Errors.navigationFailed(`Failed to load ${opts.url}`, String(err));
   }
 
-  if (opts.waitStrategy === 'auto' || opts.waitStrategy === 'networkidle') {
+  if (opts.waitStrategy === 'networkidle') {
+    // Explicit opt-in: wait fully for network to settle.
     await page.waitForLoadState('networkidle').catch(() => {});
+  } else if (opts.waitStrategy === 'auto') {
+    // Bounded: take networkidle if it comes quickly, else cap it so chatty sites
+    // (analytics/chat/long-poll) don't stall the capture to the nav timeout.
+    await Promise.race([
+      page.waitForLoadState('networkidle').catch(() => {}),
+      page.waitForTimeout(config.browser.networkIdleCapMs),
+    ]);
   }
 
   const isCanvasApp = await detectCanvasApp(page);
