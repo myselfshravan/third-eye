@@ -110,6 +110,10 @@ const CaptureOptionsBase = z
     // Block ads/trackers/analytics. Faster + cleaner shots.
     blockAds: z.boolean().default(true),
     blockCookieBanners: z.boolean().default(true),
+    // Force the software-WebGL (SwiftShader) browser. Default auto: a fast
+    // no-GPU render first, retried with WebGL only if a canvas/Flutter app is
+    // detected. Set true to skip straight to WebGL (canvas apps you know need it).
+    webgl: z.boolean().optional(),
     // Per-request egress proxy (overrides PROXY_URL). e.g. http://user:pass@host:port
     proxy: z.string().optional(),
     // Throw `upstream_blocked` instead of returning a capture when a bot-wall /

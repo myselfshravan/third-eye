@@ -12,6 +12,11 @@ import { browserEngine, engineName } from './engine.js';
  *   - hand each request its own *context* (cookie/storage isolation),
  *   - recycle a browser after N uses (caps leak growth),
  *   - validate liveness and self-heal on crash.
+ *
+ * There are TWO pools, keyed by GL mode:
+ *   - default (no-GPU): CPU raster — fast 2D rendering for normal DOM pages.
+ *   - webgl (SwiftShader): software WebGL so Flutter/CanvasKit/WebGL render at
+ *     all — but ~10x slower to screenshot. Created lazily, only for canvas apps.
  */
 
 interface PooledBrowser {
@@ -20,12 +25,7 @@ interface PooledBrowser {
   id: number;
 }
 
-/**
- * Launch flags. The WebGL/SwiftShader flags are what make Flutter/CanvasKit and
- * WebGL pages render at all in headless — without a working GL stack the canvas
- * is blank and you "successfully" screenshot an empty page.
- */
-function launchArgs(): string[] {
+function launchArgs(webgl: boolean): string[] {
   const args = [
     '--disable-dev-shm-usage', // use /tmp not the tiny /dev/shm (Docker OOM fix)
     '--no-sandbox', // required in most container runtimes
@@ -43,8 +43,9 @@ function launchArgs(): string[] {
     // also strips this and the Runtime.enable CDP leak at the binary level.
     '--disable-blink-features=AutomationControlled',
   ];
-  if (config.browser.enableWebgl) {
+  if (webgl) {
     // ANGLE over SwiftShader = software WebGL that works without a real GPU.
+    // Needed for canvas/Flutter, but ~10x slower to composite — opt-in only.
     args.push(
       '--use-gl=angle',
       '--use-angle=swiftshader',
@@ -53,28 +54,25 @@ function launchArgs(): string[] {
       '--ignore-gpu-blocklist',
     );
   } else {
-    args.push('--disable-gpu');
+    args.push('--disable-gpu'); // CPU raster — fast for normal pages
   }
   return args;
 }
 
 let counter = 0;
 
-function createPool(): Pool<PooledBrowser> {
+function createPool(webgl: boolean, warm: boolean): Pool<PooledBrowser> {
   const factory: genericPool.Factory<PooledBrowser> = {
     async create() {
       const id = ++counter;
       const browser = await browserEngine.launch({
         headless: config.browser.headless,
-        args: launchArgs(),
+        args: launchArgs(webgl),
         ...(config.browser.channel ? { channel: config.browser.channel } : {}),
-        // Egress proxy applies to all contexts from this browser when set.
         ...(config.browser.proxyUrl ? { proxy: { server: config.browser.proxyUrl } } : {}),
       });
-      browser.on('disconnected', () => {
-        logger.warn({ browserId: id }, 'browser disconnected');
-      });
-      logger.info({ browserId: id, engine: engineName }, 'browser launched');
+      browser.on('disconnected', () => logger.warn({ browserId: id, webgl }, 'browser disconnected'));
+      logger.info({ browserId: id, engine: engineName, webgl }, 'browser launched');
       return { browser, uses: 0, id };
     },
     async destroy(pb) {
@@ -91,7 +89,7 @@ function createPool(): Pool<PooledBrowser> {
   };
 
   return genericPool.createPool(factory, {
-    min: config.browser.poolSize,
+    min: warm ? config.browser.poolSize : 0, // webgl pool is lazy (cold)
     max: config.browser.poolSize,
     testOnBorrow: true,
     acquireTimeoutMillis: 30_000,
@@ -103,18 +101,19 @@ function createPool(): Pool<PooledBrowser> {
 export class BrowserPool {
   private pool: Pool<PooledBrowser>;
 
-  constructor() {
-    this.pool = createPool();
+  constructor(
+    private readonly webgl: boolean,
+    warm: boolean,
+  ) {
+    this.pool = createPool(webgl, warm);
   }
 
   /** Warm the pool to `min` so the first real request isn't a cold start. */
   async warmUp(): Promise<void> {
     const n = config.browser.poolSize;
-    const seeds = await Promise.all(
-      Array.from({ length: n }, () => this.pool.acquire()),
-    );
+    const seeds = await Promise.all(Array.from({ length: n }, () => this.pool.acquire()));
     await Promise.all(seeds.map((s) => this.pool.release(s)));
-    logger.info({ size: n }, 'browser pool warmed');
+    logger.info({ size: n, webgl: this.webgl }, 'browser pool warmed');
   }
 
   /**
@@ -133,13 +132,10 @@ export class BrowserPool {
       context = await pb.browser.newContext(contextOptions);
       return await fn(context);
     } catch (err) {
-      // A protocol/disconnect error means the browser is suspect — don't reuse.
       if (!pb.browser.isConnected()) healthy = false;
       throw err;
     } finally {
-      if (context) {
-        await context.close().catch(() => {});
-      }
+      if (context) await context.close().catch(() => {});
       if (!healthy || pb.uses >= config.browser.maxUses || !pb.browser.isConnected()) {
         await this.pool.destroy(pb).catch(() => {});
       } else {
@@ -150,6 +146,7 @@ export class BrowserPool {
 
   stats() {
     return {
+      webgl: this.webgl,
       size: this.pool.size,
       available: this.pool.available,
       borrowed: this.pool.borrowed,
@@ -159,15 +156,24 @@ export class BrowserPool {
   }
 
   async drain(): Promise<void> {
-    logger.info('draining browser pool');
+    logger.info({ webgl: this.webgl }, 'draining browser pool');
     await this.pool.drain();
     await this.pool.clear();
   }
 }
 
-// Singleton — one pool per process.
-let instance: BrowserPool | null = null;
-export function getBrowserPool(): BrowserPool {
-  if (!instance) instance = new BrowserPool();
-  return instance;
+// One pool per GL mode. Default (no-GPU) is warm; webgl is lazy (canvas-only).
+const pools = new Map<boolean, BrowserPool>();
+
+export function getBrowserPool(webgl = false): BrowserPool {
+  let p = pools.get(webgl);
+  if (!p) {
+    p = new BrowserPool(webgl, /* warm */ !webgl);
+    pools.set(webgl, p);
+  }
+  return p;
+}
+
+export async function drainAllPools(): Promise<void> {
+  await Promise.all([...pools.values()].map((p) => p.drain()));
 }

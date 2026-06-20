@@ -1,7 +1,7 @@
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { buildServer } from '../api/server.js';
-import { getBrowserPool } from '../capture/browserPool.js';
+import { getBrowserPool, drainAllPools } from '../capture/browserPool.js';
 
 /**
  * API entrypoint. The API process also owns a (small) browser pool so the
@@ -21,7 +21,7 @@ async function main() {
     logger.info({ signal }, 'shutting down API');
     try {
       await app.close();
-      await getBrowserPool().drain();
+      await drainAllPools();
     } catch (err) {
       logger.error({ err }, 'error during shutdown');
     } finally {

@@ -215,18 +215,26 @@ export async function preparePage(context: BrowserContext, opts: CaptureOptions)
   return { page, finalUrl, httpStatus, isCanvasApp, blocked };
 }
 
+/** Internal signal: a no-GPU render hit a canvas app and must retry with WebGL. */
+class CanvasNeedsWebgl extends Error {}
+
 /**
- * The capture orchestrator: context → prepare page → pixels. Wrapped in a hard
- * overall timeout so a pathological page can never pin a pooled browser.
+ * One capture pass against the pool for the given GL mode. With `bailIfCanvas`,
+ * it aborts *before* the expensive screenshot when a canvas/Flutter app is
+ * detected, so the orchestrator can re-render it in the WebGL pool.
  */
-export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
+function runCapture(opts: CaptureOptions, webgl: boolean, bailIfCanvas: boolean): Promise<CaptureResult> {
   const startedAt = Date.now();
-  const pool = getBrowserPool();
+  const pool = getBrowserPool(webgl);
 
   const work = pool.withContext(
     buildContextOptions(opts),
     async (context): Promise<CaptureResult> => {
       const { page, finalUrl, httpStatus, isCanvasApp, blocked } = await preparePage(context, opts);
+
+      // Canvas needs software-WebGL to not be blank — bail to the WebGL pool
+      // before wasting time on a (fast but blank) no-GPU screenshot.
+      if (bailIfCanvas && isCanvasApp) throw new CanvasNeedsWebgl();
 
       // ── PDF path ──────────────────────────────────────────────────────────
       if (opts.pdf) {
@@ -297,4 +305,24 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
   );
 
   return Promise.race([work, timeout]);
+}
+
+/**
+ * The capture orchestrator. Renders in the fast no-GPU pool by default; only
+ * canvas/Flutter apps (auto-detected, or forced via `webgl: true`) use the
+ * ~10x-slower SwiftShader pool. This keeps normal-page screenshots ~1-2s while
+ * still rendering canvas apps correctly.
+ */
+export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
+  if (opts.webgl === true) return runCapture(opts, /* webgl */ true, /* bailIfCanvas */ false);
+
+  try {
+    return await runCapture(opts, /* webgl */ false, /* bailIfCanvas */ config.browser.enableWebgl);
+  } catch (err) {
+    if (err instanceof CanvasNeedsWebgl) {
+      logger.info({ url: opts.url }, 'canvas app detected — re-rendering with WebGL');
+      return runCapture(opts, /* webgl */ true, /* bailIfCanvas */ false);
+    }
+    throw err;
+  }
 }

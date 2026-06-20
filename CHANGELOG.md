@@ -7,7 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
-- **Faster `auto` captures on heavy sites** — the readiness oracle now starts at
+- **~10x faster screenshots.** SwiftShader software-WebGL (needed only for
+  canvas/Flutter) was taxing *every* capture (full-page bluorng: 15s). Captures
+  now use a fast **no-GPU pool** by default and only fall back to the WebGL pool
+  when a canvas app is detected (or `webgl: true` is set) — normal-page
+  screenshots drop to ~1-2s. Two lazy pools keyed by GL mode in `browserPool.ts`.
+- **Faster `auto` waits on heavy sites** — the readiness oracle now starts at
   `DOMContentLoaded` (not full `load`) and **caps the `networkidle` wait**
   (`NETWORKIDLE_CAP_MS`, default 3s) so chatty sites (analytics/chat/long-poll)
   no longer stall to the navigation timeout. Explicit `waitStrategy: "networkidle"`

@@ -18,7 +18,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { CaptureOptionsSchema } from '../src/core/schema.js';
 import { capture } from '../src/capture/capture.js';
 import { extractProduct } from '../src/extract/extract.js';
-import { getBrowserPool } from '../src/capture/browserPool.js';
+import { drainAllPools } from '../src/capture/browserPool.js';
 
 interface Entry {
   url: string;
@@ -84,7 +84,7 @@ async function main() {
   rows.forEach((r) => console.log(r));
   console.log('──────────────────────────────────────────────────────────────────\n');
 
-  await getBrowserPool().drain();
+  await drainAllPools();
   process.exit(0);
 }
 

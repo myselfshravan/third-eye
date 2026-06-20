@@ -8,7 +8,7 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { CaptureOptionsSchema } from '../src/core/schema.js';
 import { capture } from '../src/capture/capture.js';
-import { getBrowserPool } from '../src/capture/browserPool.js';
+import { drainAllPools } from '../src/capture/browserPool.js';
 
 async function main() {
   const url = process.argv[2] ?? 'https://example.com';
@@ -30,7 +30,7 @@ async function main() {
     httpStatus: result.meta.httpStatus,
   });
 
-  await getBrowserPool().drain();
+  await drainAllPools();
   process.exit(0);
 }
 
