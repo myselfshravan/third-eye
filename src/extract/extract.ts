@@ -34,8 +34,11 @@ export async function extractProduct(opts: CaptureOptions & { maxImages?: number
   // ── Fast tier: plain HTTP, no browser ───────────────────────────────────────
   // Most PDPs server-render their data, and a clean HTTP client passes bot-walls
   // that block the headless browser (e.g. ABFRL). ~0.5-1s when it hits.
+  // Only short-circuit on HIGH confidence (JSON-LD/Shopify/Next.js RSC = full
+  // data). A medium/og-only hit might be a JS-rendered SPA whose gallery only
+  // appears in the browser — fall through, but keep `fast` as a floor below.
   const fast = await fastExtract(opts.url, maxImages).catch(() => null);
-  if (fast && fast.images.length) return fast;
+  if (fast && fast.confidence === 'high' && fast.images.length) return fast;
 
   // ── Fallback: browser (JS-rendered SPAs, or when the fast tier found nothing) ─
   const pool = getBrowserPool();
@@ -87,5 +90,12 @@ export async function extractProduct(opts: CaptureOptions & { maxImages?: number
     setTimeout(() => reject(Errors.captureTimeout()), config.browser.captureTimeoutMs),
   );
 
-  return Promise.race([work, timeout]);
+  const browserResult = await Promise.race([work, timeout]).catch((err) => {
+    if (fast) return fast; // browser failed (e.g. blocked) but the fast tier had something
+    throw err;
+  });
+  // Never regress below the fast tier: if the browser found fewer images (e.g. it
+  // was blocked, or the SPA didn't yield more), keep the fast result.
+  if (fast && fast.images.length > browserResult.images.length) return fast;
+  return browserResult;
 }
