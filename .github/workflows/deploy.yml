@@ -36,7 +36,7 @@ jobs:
     # Manual runs always deploy; pushes deploy only when the commit says #deploy.
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '#deploy')
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
