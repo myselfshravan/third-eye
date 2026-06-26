@@ -7,19 +7,10 @@ name: Deploy
 # Deploys to the EC2 instance over AWS SSM (no SSH, no inbound ports): it runs
 # `git pull` + `docker compose up -d --build` on the box and health-checks.
 #
-# Required GitHub repo secrets (Settings → Secrets and variables → Actions):
-#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   — a dedicated deploy IAM user.
-# Minimal IAM policy for that user (least privilege):
-#   {
-#     "Version": "2012-10-17",
-#     "Statement": [
-#       { "Effect": "Allow", "Action": ["ec2:DescribeInstances"], "Resource": "*" },
-#       { "Effect": "Allow",
-#         "Action": ["ssm:SendCommand","ssm:GetCommandInvocation"],
-#         "Resource": "*" }
-#     ]
-#   }
-# (For stronger security, swap the static keys for GitHub OIDC + an IAM role.)
+# Auth: GitHub OIDC → assumes an IAM role in the Klydo account (no stored keys).
+# Role: arn:aws:iam::129401449137:role/third-eye-github-deploy
+#   trusts repo:myselfshravan/third-eye:*; allows ec2:DescribeInstances +
+#   ssm:SendCommand + ssm:GetCommandInvocation.
 
 on:
   push:
@@ -30,9 +21,14 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+permissions:
+  id-token: write   # for GitHub OIDC
+  contents: read
+
 env:
   AWS_REGION: ap-south-1
   INSTANCE_TAG: third-eye
+  DEPLOY_ROLE_ARN: arn:aws:iam::129401449137:role/third-eye-github-deploy
 
 jobs:
   deploy:
@@ -42,8 +38,7 @@ jobs:
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy to EC2 via SSM
