@@ -7,15 +7,17 @@ import type { ImageSource, ProductData, ProductImage } from './types.js';
 import { extractStructured } from './structured.js';
 import { extractShopify } from './shopify.js';
 import { extractHeuristic } from './heuristics.js';
+import { fastExtract } from './fastFetch.js';
 import { dedupeImages } from './normalize.js';
 
 /** Image-source precedence for ranking/dedupe (lower = higher trust). */
 const SOURCE_RANK: Record<ImageSource, number> = {
   shopify: 0,
-  jsonld: 1,
-  og: 2,
-  microdata: 3,
-  dom: 4,
+  nextflight: 1,
+  jsonld: 2,
+  og: 3,
+  microdata: 4,
+  dom: 5,
 };
 
 const first = <T>(...vals: (T | undefined)[]): T | undefined => vals.find((v) => v != null);
@@ -28,6 +30,14 @@ const first = <T>(...vals: (T | undefined)[]): T | undefined => vals.find((v) =>
 export async function extractProduct(opts: CaptureOptions & { maxImages?: number }): Promise<ProductData> {
   const startedAt = Date.now();
   const maxImages = opts.maxImages ?? config.extract.maxImages;
+
+  // ── Fast tier: plain HTTP, no browser ───────────────────────────────────────
+  // Most PDPs server-render their data, and a clean HTTP client passes bot-walls
+  // that block the headless browser (e.g. ABFRL). ~0.5-1s when it hits.
+  const fast = await fastExtract(opts.url, maxImages).catch(() => null);
+  if (fast && fast.images.length) return fast;
+
+  // ── Fallback: browser (JS-rendered SPAs, or when the fast tier found nothing) ─
   const pool = getBrowserPool();
 
   const work = pool.withContext(buildContextOptions(opts), async (context): Promise<ProductData> => {

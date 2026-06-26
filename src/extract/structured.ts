@@ -128,8 +128,45 @@ function firstOffer(offers: unknown): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Read structured signals from a raw HTML string (no browser) — for the
+ * plain-fetch fast path. Microdata is skipped here (rare + last-resort).
+ */
+export function readSignalsFromHtml(html: string): RawSignals {
+  const jsonld: string[] = [];
+  const re = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) jsonld.push(m[1] ?? '');
+
+  const og: Record<string, string> = {};
+  const ogImages: string[] = [];
+  const metaRe = /<meta\b[^>]*>/gi;
+  const attr = (tag: string, name: string): string | null => {
+    const a = tag.match(new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s">]+))`, 'i'));
+    return a ? (a[2] ?? a[3] ?? a[4] ?? null) : null;
+  };
+  const decode = (s: string) => s.replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#x2f;/gi, '/');
+  let tag: RegExpExecArray | null;
+  while ((tag = metaRe.exec(html))) {
+    const key = (attr(tag[0], 'property') ?? attr(tag[0], 'name') ?? '').toLowerCase();
+    if (!key.startsWith('og:') && !key.startsWith('product:') && !key.startsWith('twitter:')) continue;
+    const content = attr(tag[0], 'content');
+    if (!content) continue;
+    const val = decode(content);
+    if (key === 'og:image') ogImages.push(val);
+    else if (!(key in og)) og[key] = val;
+  }
+  if (ogImages.length) og['og:image'] = ogImages.join('\n');
+  return { jsonld, og, micro: {} };
+}
+
 export async function extractStructured(page: Page, base: string): Promise<StructuredResult> {
-  const { jsonld, og, micro } = await readSignals(page);
+  return parseSignals(await readSignals(page), base);
+}
+
+/** Merge JSON-LD / OpenGraph / microdata signals into a StructuredResult (pure). */
+export function parseSignals(signals: RawSignals, base: string): StructuredResult {
+  const { jsonld, og, micro } = signals;
   const result: StructuredResult = { images: [], hadJsonLd: false };
 
   // ── JSON-LD Product (highest confidence) ──────────────────────────────────

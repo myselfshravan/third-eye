@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Extraction: plain-HTTP fast tier before the browser.** Most PDPs server-render
+  their data, and a clean HTTP client passes bot-walls that fingerprint/block the
+  headless browser. `/v1/extract` now tries a no-browser fetch first — parsing
+  **JSON-LD → OpenGraph → Shopify `.json` → Next.js `__next_f` RSC flight** — and
+  only falls back to the browser for JS-rendered SPAs. This **unblocks all 7 ABFRL
+  brands** (Allen Solly, Van Heusen, Louis Philippe, Peter England, Reebok,
+  American Eagle, Simon Carter) with no proxy, and cuts structured-site extraction
+  from ~5-10s to ~0.5-1s. (Ported from the fashion-scraper technique.)
 - **~10x faster screenshots.** SwiftShader software-WebGL (needed only for
   canvas/Flutter) was taxing *every* capture (full-page bluorng: 15s). Captures
   now use a fast **no-GPU pool** by default and only fall back to the WebGL pool

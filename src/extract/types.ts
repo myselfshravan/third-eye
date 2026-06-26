@@ -4,7 +4,7 @@
  * the page. Designed to feed a downstream similar-image-search pipeline.
  */
 
-export type ImageSource = 'jsonld' | 'og' | 'shopify' | 'dom' | 'microdata';
+export type ImageSource = 'jsonld' | 'og' | 'shopify' | 'dom' | 'microdata' | 'nextflight';
 
 export interface ProductImage {
   url: string;
