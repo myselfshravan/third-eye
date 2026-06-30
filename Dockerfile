@@ -9,6 +9,17 @@ ENV NODE_ENV=production
 # Browsers live here in the base image; the npm package resolves them from it.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# The Playwright v1.48 image ships Node 20, but the app targets Node >=22 (and
+# relies on a Node-24-era global fetch/undici). Upgrade Node in place via the
+# NodeSource apt repo so every downstream stage runs Node 24.
+ARG NODE_MAJOR=24
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* \
+ && node --version && npm --version
+
 # ── deps + build ──────────────────────────────────────────────────────────────
 FROM base AS builder
 ENV NODE_ENV=development
