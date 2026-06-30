@@ -1,3 +1,4 @@
+import '../core/http.js'; // installs the shared keep-alive fetch dispatcher
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { looksBlockedHtml } from '../capture/block.js';
@@ -17,7 +18,9 @@ import type { ImageSource, ProductData, ProductImage } from './types.js';
 
 const CHROME_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-const MAX_HTML_BYTES = 3_000_000;
+// PDP HTML (JSON-LD / OG / Shopify JSON / Next.js flight) lives well within the
+// first ~1.5 MB; reading further is wasted network + decode on pathological pages.
+const MAX_HTML_BYTES = 1_500_000;
 
 const SOURCE_RANK: Record<ImageSource, number> = {
   shopify: 0,
@@ -39,7 +42,7 @@ function hostOf(url: string | undefined): string | null {
 
 async function fetchText(url: string): Promise<{ html: string; finalUrl: string; status: number } | null> {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), config.browser.navTimeoutMs);
+  const t = setTimeout(() => ac.abort(), config.extract.fastFetchTimeoutMs);
   try {
     const res = await fetch(url, {
       redirect: 'follow',
@@ -48,6 +51,7 @@ async function fetchText(url: string): Promise<{ html: string; finalUrl: string;
         'user-agent': CHROME_UA,
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'accept-language': 'en-IN,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
       },
     });
     const finalUrl = res.url || url;
@@ -80,8 +84,11 @@ async function fetchShopify(finalUrl: string) {
   if (!jsonUrl) return null;
   try {
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 10_000);
-    const res = await fetch(jsonUrl, { signal: ac.signal, headers: { 'user-agent': CHROME_UA } });
+    const t = setTimeout(() => ac.abort(), config.extract.shopifyFetchTimeoutMs);
+    const res = await fetch(jsonUrl, {
+      signal: ac.signal,
+      headers: { 'user-agent': CHROME_UA, 'accept-encoding': 'gzip, deflate, br' },
+    });
     clearTimeout(t);
     if (!res.ok) return null;
     return parseShopifyJson((await res.json()) as { product?: never }, finalUrl);
@@ -100,10 +107,21 @@ export async function fastExtract(
   maxImages: number,
 ): Promise<ProductData | null> {
   const startedAt = Date.now();
+  // Overlap the Shopify `.json` round-trip with the HTML fetch instead of
+  // firing it serially afterwards. Keyed off the original URL (canonical for the
+  // overwhelming majority of PDPs); a redirect-induced miss is recovered below.
+  const shopifyEarly = fetchShopify(url).catch(() => null);
+
   const fetched = await fetchText(url);
-  if (!fetched) return null;
+  if (!fetched) {
+    void shopifyEarly; // already swallows its own errors
+    return null;
+  }
   const { html, finalUrl, status } = fetched;
-  if (status >= 400 && looksBlockedHtml(html, status)) return null; // let the browser try
+  if (status >= 400 && looksBlockedHtml(html, status)) {
+    void shopifyEarly;
+    return null; // let the browser try
+  }
 
   const structured = parseSignals(readSignalsFromHtml(html), finalUrl);
 
@@ -112,7 +130,10 @@ export async function fastExtract(
   const nextObj = extractNextProductObject(html);
   const next = nextObj ? nextProductToData(nextObj, imageHost) : null;
 
-  const shopify = await fetchShopify(finalUrl);
+  // Only pay a second (sequential) Shopify fetch if the page redirected to a
+  // different URL and the parallel attempt found nothing.
+  let shopify = await shopifyEarly;
+  if (!shopify && finalUrl !== url) shopify = await fetchShopify(finalUrl);
 
   const allImages: ProductImage[] = [
     ...(shopify?.images ?? []),

@@ -44,7 +44,9 @@ export async function extractProduct(opts: CaptureOptions & { maxImages?: number
   const pool = getBrowserPool();
 
   const work = pool.withContext(buildContextOptions(opts), async (context): Promise<ProductData> => {
-    const { page, finalUrl, httpStatus, blocked } = await preparePage(context, opts);
+    const { page, finalUrl, httpStatus, blocked } = await preparePage(context, opts, {
+      lightweight: true,
+    });
 
     const structured = await extractStructured(page, finalUrl);
     const shopify = await extractShopify(page, finalUrl);

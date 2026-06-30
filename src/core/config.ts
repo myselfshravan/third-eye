@@ -59,6 +59,16 @@ const EnvSchema = z.object({
   // Extraction (PDP/PLP product images + structured data).
   EXTRACT_MAX_IMAGES: intish(12),
   EXTRACT_DOWNLOAD_IMAGES: boolish(false),
+  // The extract browser fallback only needs the product image in the DOM, not a
+  // pixel-perfect render — so it uses a much tighter networkidle cap than the
+  // screenshot path (which keeps the 3s NETWORKIDLE_CAP_MS for visual stability).
+  EXTRACT_NETWORKIDLE_CAP_MS: intish(500),
+  // The plain-HTTP fast tier must fail fast and hand off to the browser — it
+  // should never inherit the 20s browser nav timeout for a hung origin.
+  FAST_FETCH_TIMEOUT_MS: intish(8_000),
+  // Shopify `.json` runs in parallel; cap it tight so a slow/oversized variant
+  // feed never dominates the fast-tier wall-clock.
+  SHOPIFY_FETCH_TIMEOUT_MS: intish(6_000),
 
   // OG image fast endpoint (/v1/og).
   OG_FETCH_TIMEOUT_MS: intish(5_000),
@@ -161,6 +171,9 @@ export const config = {
   extract: {
     maxImages: env.EXTRACT_MAX_IMAGES,
     downloadImages: env.EXTRACT_DOWNLOAD_IMAGES,
+    networkIdleCapMs: env.EXTRACT_NETWORKIDLE_CAP_MS,
+    fastFetchTimeoutMs: env.FAST_FETCH_TIMEOUT_MS,
+    shopifyFetchTimeoutMs: env.SHOPIFY_FETCH_TIMEOUT_MS,
   },
 
   og: {

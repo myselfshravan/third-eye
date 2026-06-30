@@ -140,7 +140,11 @@ export interface PreparedPage {
  * The shared front half of every operation; `capture()` and the extractor both
  * build on the page it returns.
  */
-export async function preparePage(context: BrowserContext, opts: CaptureOptions): Promise<PreparedPage> {
+export async function preparePage(
+  context: BrowserContext,
+  opts: CaptureOptions,
+  prep: { lightweight?: boolean } = {},
+): Promise<PreparedPage> {
   context.setDefaultNavigationTimeout(config.browser.navTimeoutMs);
   context.setDefaultTimeout(config.browser.navTimeoutMs);
 
@@ -172,18 +176,29 @@ export async function preparePage(context: BrowserContext, opts: CaptureOptions)
     await page.waitForLoadState('networkidle').catch(() => {});
   } else if (opts.waitStrategy === 'auto') {
     // Bounded: take networkidle if it comes quickly, else cap it so chatty sites
-    // (analytics/chat/long-poll) don't stall the capture to the nav timeout.
+    // (analytics/chat/long-poll) don't stall the capture to the nav timeout. The
+    // extract fallback uses a much tighter cap (data is present by DCL).
+    const idleCapMs = prep.lightweight
+      ? config.extract.networkIdleCapMs
+      : config.browser.networkIdleCapMs;
     await Promise.race([
       page.waitForLoadState('networkidle').catch(() => {}),
-      page.waitForTimeout(config.browser.networkIdleCapMs),
+      page.waitForTimeout(idleCapMs),
     ]);
   }
 
-  const isCanvasApp = await detectCanvasApp(page);
+  // Canvas detection/first-frame waits exist to render pixels correctly — the
+  // extract fallback only reads the DOM, so skip them entirely there.
+  const isCanvasApp = prep.lightweight ? false : await detectCanvasApp(page);
 
   if (opts.waitStrategy === 'auto') {
-    await waitForFonts(page);
-    if (opts.scrollPage && !opts.selector && !opts.clip) await autoScroll(page);
+    // Fonts only matter for screenshot fidelity; skip the (up to 5s) wait for extract.
+    if (!prep.lightweight) await waitForFonts(page);
+    if (opts.scrollPage && !opts.selector && !opts.clip) {
+      // A short scroll still triggers top-of-page lazy-loaded gallery images for
+      // extract, without the full ~5s lazy-load sweep the screenshot path does.
+      await autoScroll(page, 600, prep.lightweight ? 8 : 60);
+    }
     if (isCanvasApp) await waitForCanvasReady(page);
   }
 

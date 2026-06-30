@@ -85,11 +85,13 @@ export async function detectCanvasApp(page: Page): Promise<boolean> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).flutterConfiguration != null;
       if (flutter) return true;
-      // A large full-bleed canvas that dominates the viewport ⇒ canvas app.
+      // A large full-bleed canvas that dominates the viewport ⇒ canvas app. The
+      // threshold is high (80%) so a decorative/ad canvas doesn't false-positive
+      // and trigger the expensive canvas first-frame wait.
       const canvases = Array.from(document.querySelectorAll('canvas'));
       return canvases.some((c) => {
         const r = c.getBoundingClientRect();
-        return r.width >= window.innerWidth * 0.6 && r.height >= window.innerHeight * 0.6;
+        return r.width >= window.innerWidth * 0.8 && r.height >= window.innerHeight * 0.8;
       });
     })
     .catch(() => false);

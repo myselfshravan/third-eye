@@ -1,3 +1,4 @@
+import '../core/http.js'; // installs the shared keep-alive fetch dispatcher
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { absolutize } from '../extract/normalize.js';
@@ -15,20 +16,31 @@ export type OgSource = 'cache' | 'fetch' | 'browser';
  * Parse the `og:image` URL out of raw HTML. Pure + unit-tested. Handles any
  * meta attribute order, `property=` and `name=`, and prefers `og:image:secure_url`.
  */
+// Hoisted to module scope: parseOgImage runs once per streamed chunk, so
+// re-compiling these per call was pure waste on the hot path.
+const META_TAG_RE = /<meta\b[^>]*>/gi;
+const OG_ATTR_RE: Record<'property' | 'name' | 'content', RegExp> = {
+  property: /\bproperty\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+  name: /\bname\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+  content: /\bcontent\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+};
+const ogAttr = (tag: string, name: 'property' | 'name' | 'content'): string | null => {
+  const m = tag.match(OG_ATTR_RE[name]);
+  return m ? (m[2] ?? m[3] ?? m[4] ?? null) : null;
+};
+const ogDecode = (s: string) =>
+  s
+    .replace(/&amp;/gi, '&')
+    .replace(/&#0*38;/g, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*47;|&#x2f;/gi, '/');
+
 export function parseOgImage(html: string, baseUrl: string): string | null {
-  const metas = html.match(/<meta\b[^>]*>/gi);
+  const metas = html.match(META_TAG_RE);
   if (!metas) return null;
 
-  const attr = (tag: string, name: string): string | null => {
-    const m = tag.match(new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s">]+))`, 'i'));
-    return m ? (m[2] ?? m[3] ?? m[4] ?? null) : null;
-  };
-  const decode = (s: string) =>
-    s
-      .replace(/&amp;/gi, '&')
-      .replace(/&#0*38;/g, '&')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#0*47;|&#x2f;/gi, '/');
+  const attr = ogAttr;
+  const decode = ogDecode;
 
   let secure: string | null = null;
   let plain: string | null = null;
@@ -56,7 +68,11 @@ async function fetchOgImage(url: string): Promise<{ image: string | null; blocke
     const res = await fetch(url, {
       redirect: 'follow',
       signal: ac.signal,
-      headers: { 'user-agent': CHROME_UA, accept: 'text/html,application/xhtml+xml,*/*' },
+      headers: {
+        'user-agent': CHROME_UA,
+        accept: 'text/html,application/xhtml+xml,*/*',
+        'accept-encoding': 'gzip, deflate, br',
+      },
     });
     const finalUrl = res.url || url;
 

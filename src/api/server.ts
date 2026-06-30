@@ -29,6 +29,9 @@ export async function buildServer(): Promise<FastifyInstance> {
     trustProxy: true,
     requestIdHeader: 'x-request-id',
     disableRequestLogging: false,
+    // Keep origin connections warm: the Cloudflare tunnel talks HTTP/1.1 to
+    // localhost, so reusing these sockets shaves a handshake off each request.
+    keepAliveTimeout: 60_000,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);

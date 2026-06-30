@@ -136,7 +136,14 @@ export class BrowserPool {
       throw err;
     } finally {
       if (context) await context.close().catch(() => {});
-      if (!healthy || pb.uses >= config.browser.maxUses || !pb.browser.isConnected()) {
+      // Stagger the recycle point per-browser (by id) so a warm pool doesn't hit
+      // maxUses in lockstep and pay several cold launches at once (a latency herd).
+      const recycleAt =
+        config.browser.maxUses - (pb.id % Math.max(1, config.browser.poolSize)) * 3;
+      if (!healthy || pb.uses >= recycleAt || !pb.browser.isConnected()) {
+        if (healthy && pb.browser.isConnected()) {
+          logger.debug({ browserId: pb.id, uses: pb.uses, recycleAt }, 'recycling browser (max uses)');
+        }
         await this.pool.destroy(pb).catch(() => {});
       } else {
         await this.pool.release(pb).catch(() => {});

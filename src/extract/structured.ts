@@ -132,22 +132,36 @@ function firstOffer(offers: unknown): Record<string, unknown> | null {
  * Read structured signals from a raw HTML string (no browser) — for the
  * plain-fetch fast path. Microdata is skipped here (rare + last-resort).
  */
+// Hoisted to module scope — these were re-compiled on every fast-tier extract.
+// The global regexes are used with `.exec()` inside synchronous loops that always
+// run to completion (resetting lastIndex), so sharing them across calls is safe.
+const JSONLD_RE = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+const HTML_META_RE = /<meta\b[^>]*>/gi;
+const META_ATTR_RE: Record<'property' | 'name' | 'content', RegExp> = {
+  property: /\bproperty\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+  name: /\bname\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+  content: /\bcontent\s*=\s*("([^"]*)"|'([^']*)'|([^\s">]+))/i,
+};
+const metaAttr = (tag: string, name: 'property' | 'name' | 'content'): string | null => {
+  const a = tag.match(META_ATTR_RE[name]);
+  return a ? (a[2] ?? a[3] ?? a[4] ?? null) : null;
+};
+const metaDecode = (s: string) =>
+  s.replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#x2f;/gi, '/');
+
 export function readSignalsFromHtml(html: string): RawSignals {
   const jsonld: string[] = [];
-  const re = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  JSONLD_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) jsonld.push(m[1] ?? '');
+  while ((m = JSONLD_RE.exec(html))) jsonld.push(m[1] ?? '');
 
   const og: Record<string, string> = {};
   const ogImages: string[] = [];
-  const metaRe = /<meta\b[^>]*>/gi;
-  const attr = (tag: string, name: string): string | null => {
-    const a = tag.match(new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s">]+))`, 'i'));
-    return a ? (a[2] ?? a[3] ?? a[4] ?? null) : null;
-  };
-  const decode = (s: string) => s.replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#x2f;/gi, '/');
+  const attr = metaAttr;
+  const decode = metaDecode;
+  HTML_META_RE.lastIndex = 0;
   let tag: RegExpExecArray | null;
-  while ((tag = metaRe.exec(html))) {
+  while ((tag = HTML_META_RE.exec(html))) {
     const key = (attr(tag[0], 'property') ?? attr(tag[0], 'name') ?? '').toLowerCase();
     if (!key.startsWith('og:') && !key.startsWith('product:') && !key.startsWith('twitter:')) continue;
     const content = attr(tag[0], 'content');
