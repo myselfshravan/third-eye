@@ -66,6 +66,10 @@ const EnvSchema = z.object({
   // The plain-HTTP fast tier must fail fast and hand off to the browser — it
   // should never inherit the 20s browser nav timeout for a hung origin.
   FAST_FETCH_TIMEOUT_MS: intish(8_000),
+  // Hard cap on the extract browser fallback (Tier-3 SPAs like Zara/H&M). The
+  // realtime resolve blocks on this, so it must be tight — return the fast-tier
+  // floor (or nothing) rather than letting a slow render run to CAPTURE_TIMEOUT_MS.
+  EXTRACT_CAPTURE_TIMEOUT_MS: intish(4_500),
   // Shopify `.json` runs in parallel; cap it tight so a slow/oversized variant
   // feed never dominates the fast-tier wall-clock.
   SHOPIFY_FETCH_TIMEOUT_MS: intish(6_000),
@@ -174,6 +178,7 @@ export const config = {
     networkIdleCapMs: env.EXTRACT_NETWORKIDLE_CAP_MS,
     fastFetchTimeoutMs: env.FAST_FETCH_TIMEOUT_MS,
     shopifyFetchTimeoutMs: env.SHOPIFY_FETCH_TIMEOUT_MS,
+    captureTimeoutMs: env.EXTRACT_CAPTURE_TIMEOUT_MS,
   },
 
   og: {

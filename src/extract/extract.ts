@@ -88,8 +88,11 @@ export async function extractProduct(opts: CaptureOptions & { maxImages?: number
     };
   });
 
+  // Tight cap for the realtime resolve: the caller blocks on this, so bound the
+  // browser fallback hard and lean on the fast-tier floor below rather than a
+  // long render. (Screenshots keep the larger browser.captureTimeoutMs.)
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(Errors.captureTimeout()), config.browser.captureTimeoutMs),
+    setTimeout(() => reject(Errors.captureTimeout()), config.extract.captureTimeoutMs),
   );
 
   const browserResult = await Promise.race([work, timeout]).catch((err) => {
